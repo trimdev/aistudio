@@ -6,7 +6,7 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
-// ---- Database row types ----
+// ── Database row types ────────────────────────────────────────────────────────
 
 export interface Workspace {
   id: string;
@@ -22,25 +22,48 @@ export interface Project {
   workspace_id: string;
   name: string;
   status: "pending" | "processing" | "completed" | "failed";
-  input_images: string[];   // Supabase Storage paths
-  output_image: string | null; // Supabase Storage path
+  input_images: string[];
+  output_image: string | null;
   prompt_used: string | null;
   model_used: string;
   created_at: string;
   updated_at: string;
 }
 
-// ---- UI / Client types ----
-
 export interface ProjectWithUrls extends Project {
   input_image_urls: string[];
   output_image_url: string | null;
 }
 
-export interface GenerateRequest {
-  projectId: string;
-  inputImages: File[];
-  customPrompt?: string;
+// ── Ghost Studio Tool types ───────────────────────────────────────────────────
+
+export interface UploadedImages {
+  front: File | null;
+  back: File | null;
+  side: File | null;
 }
 
-export type GenerationStatus = "idle" | "uploading" | "generating" | "done" | "error";
+export interface UploadedPreviews {
+  front: string | null;
+  back: string | null;
+  side: string | null;
+}
+
+export type GenerationStep =
+  | "idle"
+  | "uploading"
+  | "analyzing"
+  | "removing"
+  | "preserving"
+  | "compositing"
+  | "finalizing"
+  | "done"
+  | "error";
+
+export interface GenerationResult {
+  outputUrl: string;
+  outputPath: string;
+  projectId: string;
+  mimeType: string;
+  generatedAt: Date;
+}

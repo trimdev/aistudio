@@ -1,62 +1,41 @@
 "use client";
 
-import { useState } from "react";
-import { GeneratorForm } from "@/components/studio/GeneratorForm";
-import { GeneratorResult } from "@/components/studio/GeneratorResult";
-import { Button } from "@/components/ui/button";
-import { RotateCcw } from "lucide-react";
-import type { GhostMannequinResult } from "@/lib/ai/gemini";
+import { GhostStudioTool } from "@/components/studio/GhostStudioTool";
 
 export default function NewGenerationPage() {
-  const [result, setResult] = useState<{ data: GhostMannequinResult; projectId: string } | null>(null);
-
   return (
-    <div className="p-8 max-w-5xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900">New generation</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Upload 2-3 garment photos to create a ghost mannequin composite.
-          </p>
+    /**
+     * Intentionally full-bleed — no padding wrapper.
+     * The parent layout gives us a flex-1 <main> that fills the remaining
+     * viewport beside the sidebar. We own the full height here.
+     */
+    <div className="flex flex-col h-screen overflow-hidden">
+      {/* Top bar */}
+      <header className="shrink-0 border-b border-gray-100 bg-white px-6 h-14 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-7 h-7 rounded-lg bg-gray-900 flex items-center justify-center">
+            <span className="text-white text-xs font-bold select-none">👻</span>
+          </div>
+          <div>
+            <h1 className="text-sm font-semibold text-gray-900 leading-none">
+              Ghost Mannequin Studio
+            </h1>
+            <p className="text-[11px] text-gray-400 mt-0.5 leading-none">
+              AI-powered invisible mannequin compositor
+            </p>
+          </div>
         </div>
-        {result && (
-          <Button
-            variant="outline"
-            onClick={() => setResult(null)}
-            className="gap-2 text-gray-600"
-          >
-            <RotateCcw className="w-4 h-4" /> New shot
-          </Button>
-        )}
-      </div>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 text-[11px] text-gray-400 bg-gray-50 border border-gray-100 rounded-full px-3 py-1.5">
+            <div className="w-1.5 h-1.5 rounded-full bg-green-400" />
+            Gemini 2.0 Flash
+          </div>
+        </div>
+      </header>
 
-      <div className="grid lg:grid-cols-2 gap-8 items-start">
-        {/* Left: form (always visible so user can start a new one) */}
-        <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-none">
-          <h2 className="text-sm font-semibold text-gray-700 mb-5">1 — Upload & configure</h2>
-          <GeneratorForm
-            onResult={(data, projectId) => setResult({ data, projectId })}
-          />
-        </div>
-
-        {/* Right: result */}
-        <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-none min-h-64">
-          <h2 className="text-sm font-semibold text-gray-700 mb-5">2 — Result</h2>
-          {result ? (
-            <GeneratorResult result={result.data} projectId={result.projectId} />
-          ) : (
-            <div className="flex flex-col items-center justify-center h-48 text-center text-gray-400">
-              <div className="w-14 h-14 rounded-2xl bg-gray-50 border-2 border-dashed border-gray-200 flex items-center justify-center mb-3">
-                <span className="text-2xl">✨</span>
-              </div>
-              <p className="text-sm font-medium text-gray-500">Your result will appear here</p>
-              <p className="text-xs text-gray-400 mt-1 max-w-52">
-                Upload your garment photos and click Generate.
-              </p>
-            </div>
-          )}
-        </div>
+      {/* 3-panel tool — fills remaining height */}
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <GhostStudioTool />
       </div>
     </div>
   );

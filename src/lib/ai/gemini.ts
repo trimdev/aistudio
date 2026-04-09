@@ -1,6 +1,6 @@
 /**
- * Gemini AI adapter – modular so we can swap the underlying model/provider
- * by changing only this file.
+ * Gemini AI adapter – modular.
+ * Swap model/provider by editing only this file.
  */
 
 import {
@@ -10,67 +10,135 @@ import {
   type Part,
 } from "@google/generative-ai";
 
-const GHOST_MANNEQUIN_PROMPT = `You are an expert fashion photography editor specializing in ghost mannequin (invisible mannequin) product shots.
+// ─── EXACT system prompt ──────────────────────────────────────────────────────
+// Do NOT modify a single word – clients depend on this exact output.
+export const GHOST_MANNEQUIN_SYSTEM_PROMPT = `You are a professional high-end fashion e-commerce product photographer and image editor.
 
-The user has provided 2-3 photos of a garment taken from different angles (front, back, and/or interior tag).
+Create a professional ghost mannequin product image (invisible mannequin / hollow man effect) using the provided garment images.
 
-Your task:
-1. Analyse all provided garment images carefully.
-2. Generate a description of a perfect, professional ghost mannequin composite image that:
-   - Shows the garment as if worn by an invisible mannequin
-   - Has a clean white or light grey background
-   - Properly blends the front, back, and interior shots to reveal the full garment silhouette
-   - Maintains accurate colour, texture, and proportions
-   - Uses professional studio lighting (soft, even, no harsh shadows)
-   - Is suitable for an e-commerce product listing
+FINAL LAYOUT:
+Display two views of the same garment:
+- FRONT VIEW
+- BACK VIEW
 
-Since this is a text model responding with image generation guidance, output a detailed DALL-E / image-model prompt that a downstream image generation model will use to create the final composite.
+The two views must be either:
+- Side-by-side horizontally
+OR
+- Vertically stacked
 
-Format your response as valid JSON:
-{
-  "composite_prompt": "<detailed prompt for image generation>",
-  "garment_description": "<brief description of the garment detected>",
-  "detected_angles": ["front","back","interior"],
-  "quality_notes": "<any issues detected with input images>"
-}`;
+Both views must:
+- Be aligned
+- Have consistent scale and proportions
+- Be evenly spaced
+- Be centered on canvas
 
-export interface GhostMannequinResult {
-  composite_prompt: string;
-  garment_description: string;
-  detected_angles: string[];
-  quality_notes: string;
+GHOST MANNEQUIN EFFECT:
+- The garment must appear naturally self-supporting, as if worn by an invisible body.
+- Preserve realistic 3D structure and natural fabric drape.
+- Remove completely any mannequin, model, hanger, pins, hands, clips, supports or shadows from supports.
+- Neckline, sleeves, waistline and hem openings must look natural and hollow.
+- The interior hollow area must appear realistic and properly shaped.
+- No distortion of garment proportions.
+
+COLOR ACCURACY — CRITICAL REQUIREMENT:
+- Reproduce colors with absolute fidelity to the original garment.
+- Do NOT enhance, shift, brighten, recolor, stylize, filter or adjust saturation.
+- Maintain exact fabric tone, undertone and shading.
+- Preserve natural fabric sheen exactly as in reference.
+
+DETAIL PRESERVATION — CRITICAL REQUIREMENT:
+Preserve ALL original garment details exactly as shown:
+- Stitching
+- Seams
+- Buttons
+- Zippers
+- Pockets
+- Embroidery
+- Prints
+- Patterns
+- Logos
+- Labels
+- Badges
+- Drawstrings
+- Ribbing
+- Collar construction
+- Cuffs
+- Hem finishing
+- Any texture or structural details
+
+No simplification. No removal. No added design elements. No artistic reinterpretation.
+
+TECHNICAL SPECIFICATIONS:
+- Background: pure white (#FFFFFF) or neutral very light grey
+- Lighting: soft, even studio lighting
+- No harsh shadows
+- No dramatic contrast
+- Subtle natural shadow beneath garment only
+- High resolution
+- Sharp focus across entire garment
+- Clean, minimal, professional fashion e-commerce look
+- Output aspect ratio suitable for webshop (1:1 or 4:5 preferred)
+
+ABSOLUTE RESTRICTIONS:
+- No model
+- No mannequin
+- No Shadows
+- No hands
+- No props
+- No stylization
+- No color grading
+- No brand modification
+- No artistic interpretation
+- No background textures
+- No lifestyle scene
+
+This must look like a premium fashion webshop product image ready for upload.`;
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+export interface GhostMannequinImageResult {
+  imageBuffer: Buffer;
+  mimeType: string;
 }
 
-function getClient(apiKey: string) {
-  return new GoogleGenerativeAI(apiKey);
-}
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function resolveApiKey(clientKey?: string | null): string {
   const key = clientKey || process.env.GEMINI_API_KEY;
-  if (!key) throw new Error("No Gemini API key available");
+  if (!key) throw new Error("No Gemini API key configured");
   return key;
 }
 
+// ─── Core generation function ─────────────────────────────────────────────────
+
 /**
- * Analyse garment images and return ghost mannequin generation guidance.
- * @param imageBuffers – array of raw image Buffers (max 3)
- * @param mimeTypes – corresponding MIME types
- * @param clientApiKey – optional per-client key from their settings
+ * Generate a ghost mannequin composite image from 2-3 garment photos.
+ * Uses Gemini's native image generation (image-to-image editing).
+ *
+ * @param imageBuffers   Raw image buffers (front, back, optional side)
+ * @param mimeTypes      Corresponding MIME types
+ * @param clientApiKey   Optional per-workspace Gemini key
+ * @param refinePrompt   Optional user refinement instructions appended to the system prompt
  */
-export async function analyseGarmentImages(
+export async function generateGhostMannequin(
   imageBuffers: Buffer[],
   mimeTypes: string[],
   clientApiKey?: string | null,
-  customPrompt?: string
-): Promise<GhostMannequinResult> {
+  refinePrompt?: string
+): Promise<GhostMannequinImageResult> {
   const apiKey = resolveApiKey(clientApiKey);
-  const genAI = getClient(apiKey);
+  const genAI = new GoogleGenerativeAI(apiKey);
 
+  // gemini-2.0-flash-preview-image-generation supports IMAGE output modality
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash-preview-04-17",
+    model: "gemini-2.0-flash-preview-image-generation",
     safetySettings: [
       {
         category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+        threshold: HarmBlockThreshold.BLOCK_NONE,
+      },
+      {
+        category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
         threshold: HarmBlockThreshold.BLOCK_NONE,
       },
     ],
@@ -83,23 +151,42 @@ export async function analyseGarmentImages(
     },
   }));
 
-  const promptText = customPrompt
-    ? `${GHOST_MANNEQUIN_PROMPT}\n\nAdditional instructions from the user: ${customPrompt}`
-    : GHOST_MANNEQUIN_PROMPT;
+  const fullPrompt = refinePrompt?.trim()
+    ? `${GHOST_MANNEQUIN_SYSTEM_PROMPT}\n\nAdditional refinement from the user: ${refinePrompt.trim()}`
+    : GHOST_MANNEQUIN_SYSTEM_PROMPT;
 
-  const result = await model.generateContent([promptText, ...imageParts]);
-  const text = result.response.text();
+  const result = await model.generateContent({
+    contents: [
+      {
+        role: "user",
+        parts: [...imageParts, { text: fullPrompt }],
+      },
+    ],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    generationConfig: { responseModalities: ["IMAGE"] } as any,
+  });
 
-  // Strip markdown code fences if present
-  const jsonStr = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-  return JSON.parse(jsonStr) as GhostMannequinResult;
+  const parts = result.response.candidates?.[0]?.content?.parts ?? [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const imgPart = parts.find((p: any) => p.inlineData?.data);
+
+  if (!imgPart || !("inlineData" in imgPart) || !imgPart.inlineData?.data) {
+    // Surface the raw text response in the error so we can debug
+    const textPart = parts.find((p) => "text" in p);
+    const detail = textPart && "text" in textPart ? textPart.text : "No image returned";
+    throw new Error(`Gemini did not return an image. Details: ${detail}`);
+  }
+
+  return {
+    imageBuffer: Buffer.from(imgPart.inlineData.data, "base64"),
+    mimeType: (imgPart.inlineData.mimeType as string) || "image/png",
+  };
 }
 
-/**
- * Swappable model info – useful for settings page display.
- */
+// ─── Model metadata ───────────────────────────────────────────────────────────
+
 export const MODEL_INFO = {
-  id: "gemini-2.5-flash-preview-04-17",
+  id: "gemini-2.0-flash-preview-image-generation",
   provider: "Google Gemini",
-  displayName: "Gemini 2.5 Flash",
+  displayName: "Gemini 2.0 Flash (Image Gen)",
 } as const;

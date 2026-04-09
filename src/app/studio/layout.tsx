@@ -10,9 +10,9 @@ export default async function StudioLayout({
   await getOrCreateWorkspace();
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex h-screen overflow-hidden bg-gray-50">
       <StudioSidebar />
-      <main className="flex-1 overflow-auto">{children}</main>
+      <main className="flex-1 overflow-auto min-h-0">{children}</main>
     </div>
   );
 }
