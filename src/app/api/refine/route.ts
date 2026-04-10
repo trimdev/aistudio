@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateGhostMannequin, GHOST_MANNEQUIN_SYSTEM_PROMPT } from "@/lib/ai/gemini";
+import { refineGhostMannequin } from "@/lib/ai/gemini";
 import { getWorkspace } from "@/lib/workspace";
 import { getProject, updateProject } from "@/lib/projects";
 import { uploadOutputImage, getSignedUrl } from "@/lib/storage";
@@ -32,48 +32,55 @@ export async function POST(req: NextRequest) {
   try {
     // Use admin client — private buckets require service-role key for downloads
     const adminStorage = createSupabaseAdminClient().storage;
-    const imageBuffers: Buffer[] = [];
-    const mimeTypes: string[] = [];
 
-    if (project.output_image) {
-      const { data: outData, error } = await adminStorage
-        .from("ghost-outputs")
-        .download(project.output_image);
-      if (error || !outData) {
-        return NextResponse.json({ error: "Could not load the current output image." }, { status: 500 });
+    // Load original input images (front/back/side) if stored
+    const inputBuffers: Buffer[] = [];
+    const inputMimes: string[] = [];
+    if (project.input_images?.length) {
+      for (const inputPath of project.input_images) {
+        const { data, error } = await adminStorage.from("ghost-inputs").download(inputPath);
+        if (!error && data) {
+          inputBuffers.push(Buffer.from(await data.arrayBuffer()));
+          const ext = inputPath.split(".").pop()?.toLowerCase();
+          inputMimes.push(
+            ext === "jpg" || ext === "jpeg" ? "image/jpeg"
+            : ext === "webp" ? "image/webp"
+            : "image/png"
+          );
+        }
       }
-      imageBuffers.push(Buffer.from(await outData.arrayBuffer()));
-      const ext = project.output_image.split(".").pop()?.toLowerCase();
-      const mime = ext === "jpg" || ext === "jpeg"
-        ? "image/jpeg"
-        : ext === "webp"
-          ? "image/webp"
-          : "image/png";
-      mimeTypes.push(mime);
     }
 
-    if (imageBuffers.length === 0) {
+    // Load current composite output
+    if (!project.output_image) {
       return NextResponse.json({ error: "Could not load the current image." }, { status: 500 });
     }
-
-    if (annotationFile && annotationFile.size > 0) {
-      imageBuffers.push(Buffer.from(await annotationFile.arrayBuffer()));
-      mimeTypes.push("image/png");
+    const { data: outData, error: outError } = await adminStorage
+      .from("ghost-outputs")
+      .download(project.output_image);
+    if (outError || !outData) {
+      return NextResponse.json({ error: "Could not load the current output image." }, { status: 500 });
     }
-
-    // Build refinement prompt: system prompt + workspace memory + user feedback
-    const refinePrompt = `${GHOST_MANNEQUIN_SYSTEM_PROMPT}${memoryBlock}\n\nUser refinement feedback: ${feedback.trim()}\n\nApply the user's feedback precisely while keeping all other ghost mannequin rules intact.`;
+    const outputBuffer = Buffer.from(await outData.arrayBuffer());
+    const outExt = project.output_image.split(".").pop()?.toLowerCase();
+    const outputMime = outExt === "jpg" || outExt === "jpeg" ? "image/jpeg"
+      : outExt === "webp" ? "image/webp"
+      : "image/png";
 
     const hasAnnotation = !!(annotationFile && annotationFile.size > 0);
-    const feedbackWithContext = hasAnnotation
-      ? `[VISUAL ANNOTATION PROVIDED] The last image in the input is an annotation overlay where the user has drawn RED marks over the areas that need correction. Focus your ghost mannequin fix specifically on those red-marked regions.\n\nUser feedback: ${feedback.trim()}`
-      : feedback.trim();
+    const annotationBuffer = hasAnnotation
+      ? Buffer.from(await annotationFile!.arrayBuffer())
+      : null;
 
-    const { imageBuffer, mimeType } = await generateGhostMannequin(
-      imageBuffers,
-      mimeTypes,
-      workspace?.gemini_api_key,
-      feedbackWithContext
+    const { imageBuffer, mimeType } = await refineGhostMannequin(
+      inputBuffers,
+      inputMimes,
+      outputBuffer,
+      outputMime,
+      annotationBuffer,
+      feedback.trim(),
+      memoryBlock,
+      workspace?.gemini_api_key
     );
 
     const ext = mimeType.replace("image/", "");
@@ -89,7 +96,7 @@ export async function POST(req: NextRequest) {
     // Update project's current output
     await updateProject(projectId, {
       output_image: outputPath,
-      prompt_used: refinePrompt,
+      prompt_used: `Refinement: ${feedback.trim()}`,
     });
 
     // Log the refinement version

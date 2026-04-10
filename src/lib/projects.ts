@@ -19,10 +19,10 @@ async function signUrl(
     variant === "thumb"
       ? {
         transform: {
-          width: 320,
-          height: 320,
+          width: 600,
+          height: 600,
           resize: "contain",
-          quality: 72,
+          quality: 90,
         },
       }
       : undefined

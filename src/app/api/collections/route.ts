@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerUser } from "@/lib/supabase/server";
-import { listCollections, createCollection } from "@/lib/collections";
+import { listCollections, createCollection, deleteCollection } from "@/lib/collections";
 
 export async function GET() {
   const user = await getServerUser();
@@ -17,4 +17,14 @@ export async function POST(req: NextRequest) {
   if (!name) return NextResponse.json({ error: "name is required" }, { status: 400 });
   const collection = await createCollection(name);
   return NextResponse.json({ collection });
+}
+
+export async function DELETE(req: NextRequest) {
+  const user = await getServerUser();
+  if (!user) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const { searchParams } = new URL(req.url);
+  const id = searchParams.get("id");
+  if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
+  await deleteCollection(id);
+  return NextResponse.json({ ok: true });
 }

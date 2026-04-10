@@ -5,11 +5,52 @@ import type { ProjectCollection, ProjectCollectionWithMeta } from "@/types";
 
 const admin = () => createSupabaseAdminClient();
 
+/** Auto-migrate photos with no collection into a "Piszkozat" collection. */
+async function migratOrphanedPhotos(workspaceId: string): Promise<void> {
+  const { data: orphans } = await admin()
+    .from("projects")
+    .select("id")
+    .eq("workspace_id", workspaceId)
+    .is("collection_id", null);
+
+  if (!orphans?.length) return;
+
+  // Find or create the Piszkozat collection
+  const { data: existing } = await admin()
+    .from("project_collections")
+    .select("id")
+    .eq("workspace_id", workspaceId)
+    .eq("name", "Piszkozat")
+    .maybeSingle();
+
+  let draftId = existing?.id;
+
+  if (!draftId) {
+    const { data: created } = await admin()
+      .from("project_collections")
+      .insert({ workspace_id: workspaceId, name: "Piszkozat" })
+      .select("id")
+      .single();
+    draftId = created?.id;
+  }
+
+  if (draftId) {
+    await admin()
+      .from("projects")
+      .update({ collection_id: draftId })
+      .eq("workspace_id", workspaceId)
+      .is("collection_id", null);
+  }
+}
+
 export async function listCollections(): Promise<ProjectCollectionWithMeta[]> {
   const user = await getServerUser();
   if (!user) return [];
 
   const workspace = await getEffectiveWorkspace();
+
+  // One-time auto-migration: put pre-collections photos into "Piszkozat"
+  await migratOrphanedPhotos(workspace.id);
 
   const { data: collections } = await admin()
     .from("project_collections")
@@ -76,4 +117,14 @@ export async function touchCollection(id: string): Promise<void> {
     .from("project_collections")
     .update({ updated_at: new Date().toISOString() })
     .eq("id", id);
+}
+
+export async function deleteCollection(id: string): Promise<void> {
+  const workspace = await getEffectiveWorkspace();
+  const { error } = await admin()
+    .from("project_collections")
+    .delete()
+    .eq("id", id)
+    .eq("workspace_id", workspace.id);
+  if (error) throw error;
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateGhostMannequin, MODEL_INFO } from "@/lib/ai/gemini";
+import { uploadInputImage } from "@/lib/storage";
 import { getWorkspace } from "@/lib/workspace";
 import { createProject, updateProject } from "@/lib/projects";
 import { uploadOutputImage, getSignedUrl } from "@/lib/storage";
@@ -98,7 +99,20 @@ export async function POST(req: NextRequest) {
       mimeTypes.push(mime);
     }
 
-    await updateProject(project.id, { input_images: [] });
+    // Upload input images and store their paths
+    const inputNames = ["front", "back", "side"];
+    const inputPaths: string[] = [];
+    for (let i = 0; i < allFiles.length; i++) {
+      const ext = allFiles[i].type.replace("image/", "").replace("jpeg", "jpg");
+      const path = await uploadInputImage(
+        buffers[i],
+        `${inputNames[i]}.${ext}`,
+        normalizeMime(allFiles[i].type),
+        project.id
+      );
+      inputPaths.push(path);
+    }
+    await updateProject(project.id, { input_images: inputPaths });
 
     // Load workspace memories and build prompt
     const memories = workspace ? await listWorkspaceMemories(workspace.id) : [];

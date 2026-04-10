@@ -16,21 +16,17 @@ export const GHOST_MANNEQUIN_SYSTEM_PROMPT = `You are a professional high-end fa
 
 Create a professional ghost mannequin product image (invisible mannequin / hollow man effect) using the provided garment images.
 
-FINAL LAYOUT:
-Display two views of the same garment:
-- FRONT VIEW
-- BACK VIEW
-
-The two views must be either:
-- Side-by-side horizontally
-OR
-- Vertically stacked
+FINAL LAYOUT — MANDATORY:
+Display two views of the same garment side-by-side horizontally:
+- LEFT: FRONT VIEW
+- RIGHT: BACK VIEW
 
 Both views must:
-- Be aligned
-- Have consistent scale and proportions
-- Be evenly spaced
-- Be centered on canvas
+- Be aligned at the same vertical baseline
+- Have consistent scale and proportions relative to each other
+- Be evenly spaced with a clean gap between them
+- Be centered together on the canvas
+- NEVER be stacked vertically — always side by side
 
 GHOST MANNEQUIN EFFECT:
 - The garment must appear naturally self-supporting, as if worn by an invisible body.
@@ -181,6 +177,110 @@ export async function generateGhostMannequin(
   };
 }
 
+/**
+ * Refine an existing ghost mannequin composite.
+ * Sends original input images + current composite + optional annotation to Gemini.
+ * The prompt is structured to ONLY modify the described area and preserve everything else.
+ *
+ * @param inputBuffers   Original garment photos (front, back, optional side) — may be empty if not stored
+ * @param inputMimes     Corresponding MIME types for input photos
+ * @param outputBuffer   Current composite image to refine
+ * @param outputMime     MIME type of the composite
+ * @param annotationBuffer  Optional user-drawn annotation overlay
+ * @param feedback       User's refinement instruction
+ * @param memoryBlock    Workspace persistent memory block
+ * @param clientApiKey   Optional per-workspace Gemini key
+ */
+export async function refineGhostMannequin(
+  inputBuffers: Buffer[],
+  inputMimes: string[],
+  outputBuffer: Buffer,
+  outputMime: string,
+  annotationBuffer: Buffer | null,
+  feedback: string,
+  memoryBlock: string,
+  clientApiKey?: string | null
+): Promise<GhostMannequinImageResult> {
+  const apiKey = resolveApiKey(clientApiKey);
+  const genAI = new GoogleGenerativeAI(apiKey);
+
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.5-flash-image",
+    safetySettings: [
+      { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+      { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+    ],
+  });
+
+  const hasInputs = inputBuffers.length > 0;
+  const hasAnnotation = annotationBuffer !== null;
+
+  // Build image parts: [original inputs (if any)] + [current composite] + [annotation (if any)]
+  const imageParts: Part[] = [
+    ...inputBuffers.map((buf, i) => ({
+      inlineData: {
+        data: buf.toString("base64"),
+        mimeType: inputMimes[i] as "image/jpeg" | "image/png" | "image/webp",
+      },
+    })),
+    {
+      inlineData: {
+        data: outputBuffer.toString("base64"),
+        mimeType: outputMime as "image/jpeg" | "image/png" | "image/webp",
+      },
+    },
+    ...(annotationBuffer ? [{
+      inlineData: {
+        data: annotationBuffer.toString("base64"),
+        mimeType: "image/png" as const,
+      },
+    }] : []),
+  ];
+
+  const inputContext = hasInputs
+    ? `The first ${inputBuffers.length} image(s) are the ORIGINAL garment photo(s) (front, back, and optionally side view). The next image is the CURRENT composite result that must be refined.`
+    : `The first image is the CURRENT composite result that must be refined.`;
+
+  const annotationContext = hasAnnotation
+    ? `The LAST image is an annotation overlay where the user has drawn RED marks over the specific area that needs correction. Focus ONLY on those red-marked regions.`
+    : "";
+
+  const refinementPrompt = `${GHOST_MANNEQUIN_SYSTEM_PROMPT}${memoryBlock}
+
+--- REFINEMENT INSTRUCTIONS ---
+
+${inputContext}${annotationContext ? `\n${annotationContext}` : ""}
+
+CRITICAL — PRESERVE EVERYTHING EXCEPT THE REQUESTED FIX:
+- The side-by-side layout (front LEFT, back RIGHT) must remain EXACTLY as in the current composite. Do NOT change the arrangement.
+- Both garment views must stay in the same position, scale, and alignment as in the current composite.
+- Only the specific area described by the user should be changed.
+- All other parts of the image must remain pixel-perfect identical to the current composite.
+- Background stays pure white (#FFFFFF).
+- Do NOT re-generate or re-compose the whole image — apply a surgical fix to the described area only.
+
+User's refinement request: ${feedback.trim()}`;
+
+  const result = await model.generateContent({
+    contents: [{ role: "user", parts: [...imageParts, { text: refinementPrompt }] }],
+  });
+
+  const parts = result.response.candidates?.[0]?.content?.parts ?? [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const imgPart = parts.find((p: any) => p.inlineData?.data);
+
+  if (!imgPart || !("inlineData" in imgPart) || !imgPart.inlineData?.data) {
+    const textPart = parts.find((p) => "text" in p);
+    const detail = textPart && "text" in textPart ? textPart.text : "No image returned";
+    throw new Error(`Gemini did not return an image. Details: ${detail}`);
+  }
+
+  return {
+    imageBuffer: Buffer.from(imgPart.inlineData.data, "base64"),
+    mimeType: (imgPart.inlineData.mimeType as string) || "image/png",
+  };
+}
+
 // ─── Model photo — single-image prompts ──────────────────────────────────────
 
 const SINGLE_PHOTO_BASE = (hairColor: string, hairDesc: string) =>
@@ -269,7 +369,9 @@ export async function generateModelPhoto(
   poseIndex: number,
   sceneType: "photoshoot" | "lifestyle",
   keywords: string[],
-  clientApiKey?: string | null
+  clientApiKey?: string | null,
+  modelRefBuffer?: Buffer | null,
+  modelRefMime?: string | null
 ): Promise<GhostMannequinImageResult> {
   const apiKey = resolveApiKey(clientApiKey);
   const genAI  = new GoogleGenerativeAI(apiKey);
@@ -282,33 +384,93 @@ export async function generateModelPhoto(
     ],
   });
 
-  const imageParts: Part[] = imageBuffers.map((buf, i) => ({
+  const garmentParts: Part[] = imageBuffers.map((buf, i) => ({
     inlineData: {
       data: buf.toString("base64"),
       mimeType: mimeTypes[i] as "image/jpeg" | "image/png" | "image/webp",
     },
   }));
 
+  const refPart: Part[] = modelRefBuffer
+    ? [{
+        inlineData: {
+          data: modelRefBuffer.toString("base64"),
+          mimeType: (modelRefMime ?? "image/jpeg") as "image/jpeg" | "image/png" | "image/webp",
+        },
+      }]
+    : [];
+
   const prompt = buildSinglePhotoPrompt(variant, sceneType, poseIndex, keywords);
 
-  const result = await model.generateContent({
-    contents: [{ role: "user", parts: [...imageParts, { text: prompt }] }],
-  });
+  const refInstruction = modelRefBuffer
+    ? `\n\nMODEL APPEARANCE REFERENCE — CRITICAL: The first image provided is a reference photo of the model. The generated model must closely resemble this person: same face structure, hair color, hair style, and overall appearance. Do not change the model's appearance beyond what the pose requires.`
+    : "";
 
-  const parts   = result.response.candidates?.[0]?.content?.parts ?? [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const imgPart = parts.find((p: any) => p.inlineData?.data);
+  const fullPrompt = `${prompt}${refInstruction}`;
 
-  if (!imgPart || !("inlineData" in imgPart) || !imgPart.inlineData?.data) {
-    const textPart = parts.find((p) => "text" in p);
-    const detail   = textPart && "text" in textPart ? textPart.text : "No image returned";
-    throw new Error(`Gemini did not return an image. Details: ${detail}`);
+  // Image order: [model reference (if any)] → [garment photos] → [text prompt]
+  const requestWithRef    = { contents: [{ role: "user", parts: [...refPart, ...garmentParts, { text: fullPrompt }] }] };
+  const requestWithoutRef = { contents: [{ role: "user", parts: [...garmentParts, { text: prompt }] }] };
+
+  const MAX_ATTEMPTS = 2;
+  const RETRY_DELAY_MS = 10_000;
+
+  // Phase 1: try with model reference (if provided)
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const result = await model.generateContent(requestWithRef);
+    const parts  = result.response.candidates?.[0]?.content?.parts ?? [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const imgPart = parts.find((p: any) => p.inlineData?.data);
+
+    if (imgPart && "inlineData" in imgPart && imgPart.inlineData?.data) {
+      return {
+        imageBuffer: Buffer.from(imgPart.inlineData.data, "base64"),
+        mimeType: (imgPart.inlineData.mimeType as string) || "image/png",
+      };
+    }
+
+    const finishReason = String(result.response.candidates?.[0]?.finishReason ?? "UNKNOWN");
+
+    // IMAGE_OTHER = deterministic refusal — retrying same request won't help.
+    // If a model reference was the likely cause, fall through to phase 2 immediately.
+    if (finishReason === "IMAGE_OTHER" || finishReason === "IMAGE_SAFETY") {
+      break;
+    }
+
+    if (attempt < MAX_ATTEMPTS) {
+      await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+    }
   }
 
-  return {
-    imageBuffer: Buffer.from(imgPart.inlineData.data, "base64"),
-    mimeType: (imgPart.inlineData.mimeType as string) || "image/png",
-  };
+  // Phase 2: if we have a reference photo and it caused a refusal, retry without it
+  if (refPart.length > 0) {
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const result = await model.generateContent(requestWithoutRef);
+      const parts  = result.response.candidates?.[0]?.content?.parts ?? [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const imgPart = parts.find((p: any) => p.inlineData?.data);
+
+      if (imgPart && "inlineData" in imgPart && imgPart.inlineData?.data) {
+        return {
+          imageBuffer: Buffer.from(imgPart.inlineData.data, "base64"),
+          mimeType: (imgPart.inlineData.mimeType as string) || "image/png",
+        };
+      }
+
+      const finishReason = result.response.candidates?.[0]?.finishReason ?? "UNKNOWN";
+      const textPart = parts.find((p) => "text" in p);
+      const detail   = textPart && "text" in textPart ? (textPart as { text: string }).text : `finish_reason=${finishReason}`;
+
+      if (attempt < MAX_ATTEMPTS) {
+        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+      } else {
+        throw new Error(`Gemini did not return an image. Details: ${detail}`);
+      }
+    }
+  }
+
+  // Unreachable — satisfies TypeScript
+  throw new Error("generateModelPhoto: unexpected exit from retry loop");
 }
 
 // ─── Agent chat function ─────────────────────────────────────────────────────

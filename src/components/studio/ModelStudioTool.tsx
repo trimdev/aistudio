@@ -6,12 +6,21 @@ import {
   Wand2, RotateCcw, Loader2, Download, ImageOff,
   X, Plus, Camera, Trees, Cpu,
 } from "lucide-react";
+
+// Ghost photo shape returned by /api/projects
+interface GhostPhoto {
+  id: string;
+  name: string;
+  status: string;
+  prompt_used: string | null;
+  output_image_url: string | null;
+}
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/components/providers/LanguageProvider";
-import { UploadPanel } from "./UploadPanel";
+import { ModelUploadPanel } from "./ModelUploadPanel";
 import type {
   UploadedImages,
   UploadedPreviews,
@@ -58,17 +67,24 @@ async function callGenerateSingle(
   variant: "blonde" | "brunette",
   poseIndex: number,
   sceneType: "photoshoot" | "lifestyle",
-  keywords: string[]
+  keywords: string[],
+  ghostProjectId?: string | null,
+  collectionId?: string | null
 ): Promise<GenerationResult> {
   const fd = new FormData();
-  fd.append("front",       images.front!);
-  fd.append("back",        images.back!);
-  if (images.side) fd.append("side", images.side);
+  if (ghostProjectId) {
+    fd.append("ghostProjectId", ghostProjectId);
+  } else {
+    fd.append("front", images.front!);
+    fd.append("back",  images.back!);
+    if (images.side) fd.append("side", images.side);
+  }
   fd.append("projectName", name);
   fd.append("variant",     variant);
   fd.append("poseIndex",   String(poseIndex));
   fd.append("sceneType",   sceneType);
   fd.append("keywords",    keywords.join(","));
+  if (collectionId) fd.append("collectionId", collectionId);
 
   const res  = await fetch("/api/generate-model", { method: "POST", body: fd });
   const data = await res.json();
@@ -104,11 +120,12 @@ interface SlotCardProps {
   slot: PhotoSlot;
   index: number;
   label: string;
+  onRegenerate: () => void;
 }
 
-function SlotCard({ slot, index, label }: SlotCardProps) {
+function SlotCard({ slot, index, label, onRegenerate }: SlotCardProps) {
   return (
-    <div className="flex flex-col bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm">
+    <div className="flex flex-col bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm group/card">
       {/* Image area */}
       <div className="relative aspect-[3/4] bg-gray-50 flex items-center justify-center">
         {slot.state === "idle" && (
@@ -126,18 +143,36 @@ function SlotCard({ slot, index, label }: SlotCardProps) {
         )}
 
         {slot.state === "done" && slot.result && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={slot.result.outputUrl}
-            alt={label}
-            className="w-full h-full object-cover"
-          />
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={slot.result.outputUrl}
+              alt={label}
+              className="w-full h-full object-cover"
+            />
+            {/* Re-generate on hover */}
+            <div className="absolute inset-0 bg-black/0 group-hover/card:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover/card:opacity-100">
+              <button
+                onClick={onRegenerate}
+                className="flex items-center gap-1.5 bg-white/90 text-gray-800 text-[11px] font-bold px-3 py-1.5 rounded-full shadow hover:bg-white transition-colors"
+                title="Újragenerálás"
+              >
+                <RotateCcw className="w-3 h-3" /> Újra
+              </button>
+            </div>
+          </>
         )}
 
         {slot.state === "error" && (
-          <div className="flex flex-col items-center gap-1.5 px-3 text-center">
+          <div className="flex flex-col items-center gap-2 px-3 text-center">
             <X className="w-5 h-5 text-red-300" />
             <span className="text-[10px] text-red-400 leading-relaxed">{slot.error ?? "Hiba"}</span>
+            <button
+              onClick={onRegenerate}
+              className="flex items-center gap-1 text-[10px] font-bold text-violet-600 bg-violet-50 hover:bg-violet-100 px-2.5 py-1 rounded-full transition-colors"
+            >
+              <RotateCcw className="w-2.5 h-2.5" /> Újragenerálás
+            </button>
           </div>
         )}
 
@@ -173,9 +208,10 @@ interface VariantGridProps {
   badgeClass: string;
   slots: PhotoSlot[];
   variantKey: "blonde" | "brunette";
+  onRegenerate: (index: number) => void;
 }
 
-function VariantGrid({ label, badgeClass, slots, variantKey }: VariantGridProps) {
+function VariantGrid({ label, badgeClass, slots, variantKey, onRegenerate }: VariantGridProps) {
   const done  = slots.filter((s) => s.state === "done").length;
   const total = slots.length;
   return (
@@ -191,6 +227,7 @@ function VariantGrid({ label, badgeClass, slots, variantKey }: VariantGridProps)
             slot={slot}
             index={i}
             label={`${variantKey === "blonde" ? "Szoke" : "Barna"}_${i + 1}`}
+            onRegenerate={() => onRegenerate(i)}
           />
         ))}
       </div>
@@ -200,12 +237,20 @@ function VariantGrid({ label, badgeClass, slots, variantKey }: VariantGridProps)
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function ModelStudioTool() {
+interface ModelStudioToolProps {
+  collectionId?: string | null;
+}
+
+export function ModelStudioTool({ collectionId }: ModelStudioToolProps) {
   const { t } = useLanguage();
 
   // ── Upload state
   const [images,   setImages]   = useState<UploadedImages>({ front: null, back: null, side: null });
   const [previews, setPreviews] = useState<UploadedPreviews>({ front: null, back: null, side: null });
+
+  // ── Ghost photo state
+  const [ghostPhotos,     setGhostPhotos]     = useState<GhostPhoto[]>([]);
+  const [selectedGhostId, setSelectedGhostId] = useState<string | null>(null);
 
   // ── Config
   const [projectName,    setProjectName]    = useState("");
@@ -220,7 +265,8 @@ export function ModelStudioTool() {
   const [blondeSlots,   setBlondeSlots]   = useState<PhotoSlot[]>([]);
   const [brunetteSlots, setBrunetteSlots] = useState<PhotoSlot[]>([]);
   const [isRunning,     setIsRunning]     = useState(false);
-  const abortRef = useRef(false);
+  const abortRef    = useRef(false);
+  const baseNameRef = useRef<string>("");
 
   // ── Pre-populate from ghost studio transfer
   useEffect(() => {
@@ -239,6 +285,20 @@ export function ModelStudioTool() {
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ── Fetch ghost photos for the collection
+  useEffect(() => {
+    if (!collectionId) return;
+    fetch(`/api/projects?collectionId=${collectionId}`)
+      .then((r) => r.json())
+      .then((projects: GhostPhoto[]) => {
+        const ghosts = projects.filter(
+          (p) => p.status === "completed" && !p.prompt_used?.startsWith("model-")
+        );
+        setGhostPhotos(ghosts);
+      })
+      .catch(() => {});
+  }, [collectionId]);
 
   // ── Image handling
   const handleImageChange = useCallback((key: keyof UploadedImages, file: File | null) => {
@@ -286,7 +346,9 @@ export function ModelStudioTool() {
     count: number,
     scene: "photoshoot" | "lifestyle",
     kws: string[],
-    baseName: string
+    baseName: string,
+    ghostId?: string | null,
+    colId?: string | null
   ) {
     for (let i = 0; i < count; i++) {
       if (abortRef.current) break;
@@ -305,7 +367,9 @@ export function ModelStudioTool() {
           variant,
           i,
           scene,
-          kws
+          kws,
+          ghostId,
+          colId
         );
         if (abortRef.current) break;
         setSlots((prev) => {
@@ -314,6 +378,10 @@ export function ModelStudioTool() {
           return next;
         });
         toast.success(`${variantLabel} ${i + 1}/${count} kész`);
+        // Small pause between calls to avoid hitting Gemini QPM rate limits
+        if (i < count - 1 && !abortRef.current) {
+          await new Promise((r) => setTimeout(r, 6_000));
+        }
       } catch (err) {
         if (abortRef.current) break;
         setSlots((prev) => {
@@ -327,7 +395,10 @@ export function ModelStudioTool() {
 
   // ── Handle generate
   const handleGenerate = useCallback(async () => {
-    if (!images.front || !images.back) { toast.error(t("up_needs_both")); return; }
+    if (!selectedGhostId && (!images.front || !images.back)) {
+      toast.error(t("up_needs_both"));
+      return;
+    }
 
     abortRef.current = false;
     setIsRunning(true);
@@ -338,6 +409,8 @@ export function ModelStudioTool() {
     const baseName = projectName.trim()
       || `Model ${new Date().toLocaleDateString("hu-HU", { month: "long", day: "numeric" })}`;
 
+    baseNameRef.current = baseName;
+
     const blank = emptySlots(count);
 
     if (hairVariant === "blonde" || hairVariant === "both") setBlondeSlots([...blank]);
@@ -345,14 +418,57 @@ export function ModelStudioTool() {
 
     const tasks: Promise<void>[] = [];
     if (hairVariant === "blonde" || hairVariant === "both")
-      tasks.push(runVariant("blonde",   setBlondeSlots,   count, scene, kws, baseName));
+      tasks.push(runVariant("blonde",   setBlondeSlots,   count, scene, kws, baseName, selectedGhostId, collectionId));
     if (hairVariant === "brunette" || hairVariant === "both")
-      tasks.push(runVariant("brunette", setBrunetteSlots, count, scene, kws, baseName));
+      tasks.push(runVariant("brunette", setBrunetteSlots, count, scene, kws, baseName, selectedGhostId, collectionId));
 
     await Promise.allSettled(tasks);
     setIsRunning(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [images, projectName, hairVariant, photoCount, sceneType, activeChips, customKeywords]);
+  }, [images, projectName, hairVariant, photoCount, sceneType, activeChips, customKeywords, selectedGhostId, collectionId]);
+
+  // ── Re-generate a single slot independently
+  const handleRegenerateSingle = useCallback(async (
+    variant: "blonde" | "brunette",
+    slotIndex: number
+  ) => {
+    const setSlots = variant === "blonde" ? setBlondeSlots : setBrunetteSlots;
+    const variantLabel = variant === "blonde" ? "Szőke" : "Barna";
+
+    setSlots((prev) => {
+      const next = [...prev];
+      next[slotIndex] = { state: "loading", result: null, error: null };
+      return next;
+    });
+
+    try {
+      const kws = [...activeChips, ...customKeywords];
+      const result = await callGenerateSingle(
+        images,
+        `${baseNameRef.current} – ${variantLabel} ${slotIndex + 1}`,
+        variant,
+        slotIndex,
+        sceneType,
+        kws,
+        selectedGhostId,
+        collectionId
+      );
+      setSlots((prev) => {
+        const next = [...prev];
+        next[slotIndex] = { state: "done", result, error: null };
+        return next;
+      });
+      toast.success(`${variantLabel} ${slotIndex + 1} kész`);
+    } catch (err) {
+      setSlots((prev) => {
+        const next = [...prev];
+        next[slotIndex] = { state: "error", result: null, error: err instanceof Error ? err.message : "Hiba" };
+        return next;
+      });
+      toast.error("Generálás sikertelen");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [images, sceneType, activeChips, customKeywords, selectedGhostId, collectionId]);
 
   const handleReset = () => {
     abortRef.current = true;
@@ -363,7 +479,7 @@ export function ModelStudioTool() {
 
   const hasStarted  = blondeSlots.length > 0 || brunetteSlots.length > 0;
   const hasImages   = !!(images.front || images.back || images.side);
-  const canGenerate = !!images.front && !!images.back && !isRunning;
+  const canGenerate = (!!selectedGhostId || (!!images.front && !!images.back)) && !isRunning;
 
   const showBlonde   = hairVariant === "blonde"   || hairVariant === "both";
   const showBrunette = hairVariant === "brunette" || hairVariant === "both";
@@ -374,18 +490,63 @@ export function ModelStudioTool() {
     <div className="flex h-full min-h-0 overflow-hidden">
 
       {/* ── Left: Upload ───────────────────────────────────────────────────── */}
-      <UploadPanel images={images} previews={previews} disabled={isRunning} onImageChange={handleImageChange} />
+      <ModelUploadPanel images={images} previews={previews} disabled={isRunning} onImageChange={handleImageChange} />
 
       {/* ── Center: Results ────────────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-h-0 overflow-auto bg-gray-50 p-6 gap-6">
 
-        {!hasStarted && !hasImages && (
+        {!hasStarted && !hasImages && ghostPhotos.length === 0 && (
           <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center">
             <div className="w-16 h-16 rounded-2xl bg-violet-50 flex items-center justify-center">
               <span className="text-3xl">👗</span>
             </div>
             <h3 className="font-bold text-gray-900">{t("mod_empty_title")}</h3>
             <p className="text-sm text-gray-500 max-w-xs">{t("mod_empty_hint")}</p>
+          </div>
+        )}
+
+        {ghostPhotos.length > 0 && !hasStarted && (
+          <div className="space-y-3">
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Ghost fotók a projektből</p>
+            <p className="text-xs text-gray-500">Válassz ki egy ghost fotót, amit a modell viseljen:</p>
+            <div className="flex flex-wrap gap-3">
+              {ghostPhotos.map((photo) => (
+                <button
+                  key={photo.id}
+                  onClick={() => setSelectedGhostId((prev) => prev === photo.id ? null : photo.id)}
+                  className={cn(
+                    "relative flex flex-col items-center gap-1.5 rounded-xl border-2 p-1 transition-all",
+                    selectedGhostId === photo.id
+                      ? "border-violet-500 shadow-md"
+                      : "border-gray-200 hover:border-gray-300"
+                  )}
+                >
+                  {photo.output_image_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={photo.output_image_url}
+                      alt={photo.name}
+                      className="w-24 h-24 object-contain rounded-lg bg-gray-50"
+                    />
+                  ) : (
+                    <div className="w-24 h-24 rounded-lg bg-gray-100 flex items-center justify-center">
+                      <ImageOff className="w-6 h-6 text-gray-300" />
+                    </div>
+                  )}
+                  <span className="text-[10px] text-gray-600 font-medium max-w-[96px] truncate">{photo.name}</span>
+                  {selectedGhostId === photo.id && (
+                    <div className="absolute top-1 right-1 w-5 h-5 rounded-full bg-violet-500 flex items-center justify-center">
+                      <svg className="w-3 h-3 text-white" viewBox="0 0 10 10" fill="none">
+                        <path d="M2 5l2.5 2.5L8 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+            {selectedGhostId && (
+              <p className="text-xs text-violet-600 font-medium">Ghost fotó kiválasztva — fotók feltöltése nem szükséges</p>
+            )}
           </div>
         )}
 
@@ -416,6 +577,7 @@ export function ModelStudioTool() {
                 badgeClass="bg-amber-100 text-amber-800"
                 slots={blondeSlots}
                 variantKey="blonde"
+                onRegenerate={(i) => handleRegenerateSingle("blonde", i)}
               />
             )}
             {showBrunette && brunetteSlots.length > 0 && (
@@ -424,6 +586,7 @@ export function ModelStudioTool() {
                 badgeClass="bg-stone-100 text-stone-800"
                 slots={brunetteSlots}
                 variantKey="brunette"
+                onRegenerate={(i) => handleRegenerateSingle("brunette", i)}
               />
             )}
           </div>

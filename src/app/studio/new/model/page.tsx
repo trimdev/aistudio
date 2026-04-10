@@ -1,15 +1,21 @@
 "use client";
 
+import { Suspense } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { ModelStudioTool } from "@/components/studio/ModelStudioTool";
+import { useSearchParams } from "next/navigation";
 
-export default function ModelGenerationPage() {
+function ModelPage() {
+  const searchParams = useSearchParams();
+  const collectionId = searchParams.get("collectionId");
+  const backHref = collectionId ? `/studio/projects/${collectionId}` : "/studio/new";
+
   return (
     <div className="flex flex-col h-screen overflow-hidden">
       <header className="shrink-0 border-b border-gray-100 bg-white px-6 h-14 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Link href="/studio/new"
+          <Link href={backHref}
             className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors mr-1">
             <ArrowLeft className="w-4 h-4" />
           </Link>
@@ -27,8 +33,16 @@ export default function ModelGenerationPage() {
         </div>
       </header>
       <div className="flex-1 min-h-0 overflow-hidden">
-        <ModelStudioTool />
+        <ModelStudioTool collectionId={collectionId} />
       </div>
     </div>
+  );
+}
+
+export default function ModelGenerationPage() {
+  return (
+    <Suspense>
+      <ModelPage />
+    </Suspense>
   );
 }

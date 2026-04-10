@@ -1,32 +1,18 @@
 import Link from "next/link";
-import { ArrowRight, Wand2, FolderOpen, Clock } from "lucide-react";
+import { ArrowRight, Wand2, FolderOpen, ImageIcon, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { listProjects } from "@/lib/projects";
 import { getServerUser } from "@/lib/supabase/server";
-
-const statusColor: Record<string, string> = {
-  completed: "bg-green-100 text-green-700",
-  processing: "bg-yellow-100 text-yellow-700",
-  failed: "bg-red-100 text-red-700",
-  pending: "bg-gray-100 text-gray-600",
-};
-
-const statusLabel: Record<string, string> = {
-  completed: "Elkészült",
-  processing: "Folyamatban",
-  failed: "Sikertelen",
-  pending: "Függőben",
-};
+import { listCollections } from "@/lib/collections";
 
 export default async function StudioDashboard() {
   const user = await getServerUser();
-  const projects = await listProjects();
-  const recent = projects.slice(0, 3);
-  const completedCount = projects.filter((p) => p.status === "completed").length;
-  const thisMonth = projects.filter((p) => {
-    const d = new Date(p.created_at);
+  const collections = await listCollections();
+  const recent = collections.slice(0, 3);
+
+  const totalCompleted = collections.reduce((sum, c) => sum + c.completedCount, 0);
+  const thisMonth = collections.filter((c) => {
+    const d = new Date(c.created_at);
     const now = new Date();
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   }).length;
@@ -46,8 +32,8 @@ export default async function StudioDashboard() {
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
         {[
-          { label: "Összes projekt", value: projects.length },
-          { label: "Elkészült képek", value: completedCount },
+          { label: "Összes projekt", value: collections.length },
+          { label: "Elkészült képek", value: totalCompleted },
           { label: "Ezen a hónapon", value: thisMonth },
         ].map(({ label, value }) => (
           <Card key={label} className="p-5 border-gray-100 shadow-none">
@@ -64,11 +50,11 @@ export default async function StudioDashboard() {
               <Wand2 className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h3 className="font-semibold text-gray-900">Szellemfigura kép generálása</h3>
-              <p className="text-sm text-gray-500 mt-0.5">Töltsd fel az elöl és hátul fotókat, és kapj tökéletes termékképet másodpercek alatt.</p>
+              <h3 className="font-semibold text-gray-900">Új kép generálása</h3>
+              <p className="text-sm text-gray-500 mt-0.5">Válassz egy projektet, majd generálj Ghost vagy Modell fotót.</p>
             </div>
           </div>
-          <Link href="/studio/new">
+          <Link href="/studio/projects">
             <Button className="bg-gray-900 text-white hover:bg-gray-700 gap-2 shrink-0">
               Kezdés <ArrowRight className="w-4 h-4" />
             </Button>
@@ -90,37 +76,42 @@ export default async function StudioDashboard() {
           <div className="p-12 text-center">
             <FolderOpen className="w-10 h-10 text-gray-300 mx-auto mb-3" />
             <p className="text-sm text-gray-500">Még nincsenek projektek.</p>
-            <Link href="/studio/new">
-              <Button variant="outline" size="sm" className="mt-4">Első kép létrehozása</Button>
+            <Link href="/studio/projects">
+              <Button variant="outline" size="sm" className="mt-4">Első projekt létrehozása</Button>
             </Link>
           </div>
         </Card>
       ) : (
         <div className="space-y-3">
-          {recent.map((project) => (
-            <Card key={project.id} className="border-gray-100 shadow-none hover:border-gray-200 transition-colors">
-              <div className="p-4 flex items-center gap-4">
-                <div className="w-14 h-14 rounded-lg bg-gray-100 shrink-0 overflow-hidden">
-                  {project.output_image_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={project.output_image_url} alt={project.name} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <Clock className="w-5 h-5 text-gray-300" />
-                    </div>
-                  )}
+          {recent.map((col) => (
+            <Link key={col.id} href={`/studio/projects/${col.id}`}>
+              <Card className="border-gray-100 shadow-none hover:border-gray-200 transition-colors">
+                <div className="p-4 flex items-center gap-4">
+                  <div className="w-14 h-14 rounded-lg bg-gray-100 shrink-0 overflow-hidden">
+                    {col.thumbnailUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={col.thumbnailUrl} alt={col.name} className="w-full h-full object-contain" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <ImageIcon className="w-5 h-5 text-gray-300" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm text-gray-900 truncate">{col.name}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {new Date(col.lastActivity).toLocaleDateString("hu-HU", { year: "numeric", month: "long", day: "numeric" })}
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-semibold text-gray-700">{col.completedCount}</p>
+                    <p className="text-[11px] text-gray-400 flex items-center gap-1 justify-end mt-0.5">
+                      <Clock className="w-2.5 h-2.5" /> fotó
+                    </p>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm text-gray-900 truncate">{project.name}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {new Date(project.created_at).toLocaleDateString("hu-HU", { year: "numeric", month: "long", day: "numeric" })}
-                  </p>
-                </div>
-                <Badge className={`text-[11px] font-medium px-2 py-0.5 capitalize rounded-full border-0 ${statusColor[project.status]}`}>
-                  {statusLabel[project.status] ?? project.status}
-                </Badge>
-              </div>
-            </Card>
+              </Card>
+            </Link>
           ))}
         </div>
       )}
