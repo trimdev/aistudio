@@ -52,6 +52,7 @@ export async function POST(req: NextRequest) {
   const keywords      = keywordsRaw.split(",").map((k) => k.trim()).filter(Boolean);
   const ghostProjectId = formData.get("ghostProjectId") as string | null;
   const collectionId   = formData.get("collectionId")   as string | null;
+  const extraPrompt    = (formData.get("extraPrompt")   as string) || "";
 
   // Validate that we have either uploaded files or a ghostProjectId
   if (!ghostProjectId && (!frontFile || !backFile)) {
@@ -164,7 +165,8 @@ export async function POST(req: NextRequest) {
       keywords,
       workspace?.gemini_api_key,
       modelRefBuffer,
-      modelRefMime
+      modelRefMime,
+      extraPrompt || undefined
     );
 
     // Generation succeeded — create project record now

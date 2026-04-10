@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useEffect, KeyboardEvent, Dispatch, SetS
 import { toast } from "sonner";
 import {
   Wand2, RotateCcw, Loader2, Download, ImageOff,
-  X, Plus, Camera, Trees, Cpu,
+  X, Plus, Camera, Trees, Cpu, Shuffle,
 } from "lucide-react";
 
 // Ghost photo shape returned by /api/projects
@@ -18,6 +18,7 @@ interface GhostPhoto {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/components/providers/LanguageProvider";
 import { ModelUploadPanel } from "./ModelUploadPanel";
@@ -69,7 +70,8 @@ async function callGenerateSingle(
   sceneType: "photoshoot" | "lifestyle",
   keywords: string[],
   ghostProjectId?: string | null,
-  collectionId?: string | null
+  collectionId?: string | null,
+  extraPrompt?: string
 ): Promise<GenerationResult> {
   const fd = new FormData();
   if (ghostProjectId) {
@@ -85,6 +87,7 @@ async function callGenerateSingle(
   fd.append("sceneType",   sceneType);
   fd.append("keywords",    keywords.join(","));
   if (collectionId) fd.append("collectionId", collectionId);
+  if (extraPrompt) fd.append("extraPrompt", extraPrompt);
 
   const res  = await fetch("/api/generate-model", { method: "POST", body: fd });
   const data = await res.json();
@@ -121,9 +124,10 @@ interface SlotCardProps {
   index: number;
   label: string;
   onRegenerate: () => void;
+  onRequestRegen: () => void;
 }
 
-function SlotCard({ slot, index, label, onRegenerate }: SlotCardProps) {
+function SlotCard({ slot, index, label, onRegenerate, onRequestRegen }: SlotCardProps) {
   return (
     <div className="flex flex-col bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm group/card">
       {/* Image area */}
@@ -153,7 +157,7 @@ function SlotCard({ slot, index, label, onRegenerate }: SlotCardProps) {
             {/* Re-generate on hover */}
             <div className="absolute inset-0 bg-black/0 group-hover/card:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover/card:opacity-100">
               <button
-                onClick={onRegenerate}
+                onClick={onRequestRegen}
                 className="flex items-center gap-1.5 bg-white/90 text-gray-800 text-[11px] font-bold px-3 py-1.5 rounded-full shadow hover:bg-white transition-colors"
                 title="Újragenerálás"
               >
@@ -209,9 +213,10 @@ interface VariantGridProps {
   slots: PhotoSlot[];
   variantKey: "blonde" | "brunette";
   onRegenerate: (index: number) => void;
+  onRequestRegen: (index: number) => void;
 }
 
-function VariantGrid({ label, badgeClass, slots, variantKey, onRegenerate }: VariantGridProps) {
+function VariantGrid({ label, badgeClass, slots, variantKey, onRegenerate, onRequestRegen }: VariantGridProps) {
   const done  = slots.filter((s) => s.state === "done").length;
   const total = slots.length;
   return (
@@ -228,6 +233,7 @@ function VariantGrid({ label, badgeClass, slots, variantKey, onRegenerate }: Var
             index={i}
             label={`${variantKey === "blonde" ? "Szoke" : "Barna"}_${i + 1}`}
             onRegenerate={() => onRegenerate(i)}
+            onRequestRegen={() => onRequestRegen(i)}
           />
         ))}
       </div>
@@ -256,10 +262,14 @@ export function ModelStudioTool({ collectionId }: ModelStudioToolProps) {
   const [projectName,    setProjectName]    = useState("");
   const [hairVariant,    setHairVariant]    = useState<HairVariant>("blonde");
   const [photoCount,     setPhotoCount]     = useState<PhotoCount>(4);
-  const [sceneType,      setSceneType]      = useState<"photoshoot" | "lifestyle">("photoshoot");
+  const [sceneType,      setSceneType]      = useState<"photoshoot" | "lifestyle" | "mixture">("photoshoot");
   const [activeChips,    setActiveChips]    = useState<Set<string>>(new Set());
   const [customKwInput,  setCustomKwInput]  = useState("");
   const [customKeywords, setCustomKeywords] = useState<string[]>([]);
+
+  // ── Regen modal state
+  const [regenModal,       setRegenModal]       = useState<{ variant: "blonde" | "brunette"; index: number } | null>(null);
+  const [regenExtraPrompt, setRegenExtraPrompt] = useState("");
 
   // ── Slot state
   const [blondeSlots,   setBlondeSlots]   = useState<PhotoSlot[]>([]);
@@ -318,7 +328,24 @@ export function ModelStudioTool({ collectionId }: ModelStudioToolProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleSceneChange = (s: "photoshoot" | "lifestyle") => {
+  // ── Keyboard handling for regen modal
+  useEffect(() => {
+    if (!regenModal) return;
+    const handler = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setRegenModal(null);
+      } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        handleRegenerateSingle(regenModal.variant, regenModal.index, regenExtraPrompt.trim() || undefined);
+        setRegenModal(null);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [regenModal, regenExtraPrompt]);
+
+  const handleSceneChange = (s: "photoshoot" | "lifestyle" | "mixture") => {
     setSceneType(s);
     setActiveChips(new Set());
   };
@@ -344,12 +371,13 @@ export function ModelStudioTool({ collectionId }: ModelStudioToolProps) {
     variant: "blonde" | "brunette",
     setSlots: Dispatch<SetStateAction<PhotoSlot[]>>,
     count: number,
-    scene: "photoshoot" | "lifestyle",
+    scene: "photoshoot" | "lifestyle" | "mixture",
     kws: string[],
     baseName: string,
     ghostId?: string | null,
     colId?: string | null
   ) {
+    const isRandomScene = scene === "mixture";
     for (let i = 0; i < count; i++) {
       if (abortRef.current) break;
 
@@ -361,12 +389,18 @@ export function ModelStudioTool({ collectionId }: ModelStudioToolProps) {
 
       try {
         const variantLabel = variant === "blonde" ? "Szőke" : "Barna";
+        const actualScene: "photoshoot" | "lifestyle" = isRandomScene
+          ? (Math.random() < 0.5 ? "photoshoot" : "lifestyle")
+          : scene;
+        const actualPoseIndex = isRandomScene
+          ? Math.floor(Math.random() * 8)
+          : i;
         const result = await callGenerateSingle(
           images,
           `${baseName} – ${variantLabel} ${i + 1}`,
           variant,
-          i,
-          scene,
+          actualPoseIndex,
+          actualScene,
           kws,
           ghostId,
           colId
@@ -377,7 +411,8 @@ export function ModelStudioTool({ collectionId }: ModelStudioToolProps) {
           next[i] = { state: "done", result, error: null };
           return next;
         });
-        toast.success(`${variantLabel} ${i + 1}/${count} kész`);
+        const sceneLabel = isRandomScene ? `(${actualScene})` : "";
+        toast.success(`${variantLabel} ${i + 1}/${count} kész ${sceneLabel}`.trim());
         // Small pause between calls to avoid hitting Gemini QPM rate limits
         if (i < count - 1 && !abortRef.current) {
           await new Promise((r) => setTimeout(r, 6_000));
@@ -430,7 +465,8 @@ export function ModelStudioTool({ collectionId }: ModelStudioToolProps) {
   // ── Re-generate a single slot independently
   const handleRegenerateSingle = useCallback(async (
     variant: "blonde" | "brunette",
-    slotIndex: number
+    slotIndex: number,
+    extraPrompt?: string
   ) => {
     const setSlots = variant === "blonde" ? setBlondeSlots : setBrunetteSlots;
     const variantLabel = variant === "blonde" ? "Szőke" : "Barna";
@@ -443,15 +479,23 @@ export function ModelStudioTool({ collectionId }: ModelStudioToolProps) {
 
     try {
       const kws = [...activeChips, ...customKeywords];
+      const isRandomScene = sceneType === "mixture";
+      const actualScene: "photoshoot" | "lifestyle" = isRandomScene
+        ? (Math.random() < 0.5 ? "photoshoot" : "lifestyle")
+        : sceneType;
+      const actualPoseIndex = isRandomScene
+        ? Math.floor(Math.random() * 8)
+        : slotIndex;
       const result = await callGenerateSingle(
         images,
         `${baseNameRef.current} – ${variantLabel} ${slotIndex + 1}`,
         variant,
-        slotIndex,
-        sceneType,
+        actualPoseIndex,
+        actualScene,
         kws,
         selectedGhostId,
-        collectionId
+        collectionId,
+        extraPrompt
       );
       setSlots((prev) => {
         const next = [...prev];
@@ -578,6 +622,7 @@ export function ModelStudioTool({ collectionId }: ModelStudioToolProps) {
                 slots={blondeSlots}
                 variantKey="blonde"
                 onRegenerate={(i) => handleRegenerateSingle("blonde", i)}
+                onRequestRegen={(i) => { setRegenExtraPrompt(""); setRegenModal({ variant: "blonde", index: i }); }}
               />
             )}
             {showBrunette && brunetteSlots.length > 0 && (
@@ -587,6 +632,7 @@ export function ModelStudioTool({ collectionId }: ModelStudioToolProps) {
                 slots={brunetteSlots}
                 variantKey="brunette"
                 onRegenerate={(i) => handleRegenerateSingle("brunette", i)}
+                onRequestRegen={(i) => { setRegenExtraPrompt(""); setRegenModal({ variant: "brunette", index: i }); }}
               />
             )}
           </div>
@@ -660,16 +706,18 @@ export function ModelStudioTool({ collectionId }: ModelStudioToolProps) {
           {/* ── Scene type ───────────────────────────────────────────────── */}
           <div className="space-y-2">
             <Label className="text-sm font-semibold text-gray-700">Jelenet típusa</Label>
-            <div className="flex gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {([
                 { value: "photoshoot" as const, label: "Photoshoot", icon: Camera,
                   desc: "Fehér háttér, stúdió", active: "bg-gray-900 text-white border-gray-900" },
                 { value: "lifestyle"  as const, label: "Lifestyle",  icon: Trees,
                   desc: "Park, utca, kávézó…",  active: "bg-emerald-600 text-white border-emerald-600" },
+                { value: "mixture"    as const, label: "Mixture",    icon: Shuffle,
+                  desc: "Vegyes, véletlenszerű", active: "bg-violet-600 text-white border-violet-600" },
               ]).map(({ value, label, icon: Icon, desc, active }) => (
                 <button key={value} onClick={() => handleSceneChange(value)} disabled={isRunning}
                   className={cn(
-                    "flex-1 flex flex-col items-center gap-1 py-3 rounded-xl border transition-all",
+                    "flex flex-col items-center gap-1 py-3 rounded-xl border transition-all",
                     sceneType === value ? active + " shadow-sm" : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
                   )}>
                   <Icon className="w-4 h-4" />
@@ -684,7 +732,10 @@ export function ModelStudioTool({ collectionId }: ModelStudioToolProps) {
           <div className="space-y-2">
             <Label className="text-sm font-semibold text-gray-700">Stílus kulcsszavak</Label>
             <div className="flex flex-wrap gap-1.5">
-              {SCENE_CHIPS[sceneType].map((chip) => (
+              {(sceneType === "mixture"
+                ? [...new Set([...SCENE_CHIPS.photoshoot, ...SCENE_CHIPS.lifestyle])]
+                : SCENE_CHIPS[sceneType]
+              ).map((chip) => (
                 <button key={chip} onClick={() => toggleChip(chip)} disabled={isRunning}
                   className={cn(
                     "text-xs font-semibold px-2.5 py-1 rounded-full border transition-all",
@@ -805,6 +856,51 @@ export function ModelStudioTool({ collectionId }: ModelStudioToolProps) {
           )}
         </div>
       </div>
+
+      {/* ── Regen modal ────────────────────────────────────────────────────── */}
+      {regenModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={(e) => { if (e.target === e.currentTarget) setRegenModal(null); }}
+        >
+          <div className="bg-white rounded-2xl shadow-xl w-[400px] max-w-[90vw] p-6 space-y-4">
+            <div>
+              <h3 className="text-base font-bold text-gray-900">
+                Újragenerálás – #{regenModal.index + 1}
+              </h3>
+              <p className="text-sm text-gray-500 mt-0.5">
+                Add meg az egyéni utasításokat ehhez a fotóhoz (opcionális).
+              </p>
+            </div>
+            <Textarea
+              autoFocus
+              rows={3}
+              value={regenExtraPrompt}
+              onChange={(e) => setRegenExtraPrompt(e.target.value)}
+              placeholder="pl. sötétebb háttér, dinamikusabb póz…"
+              className="text-sm border-gray-200 focus:border-violet-400 resize-none"
+            />
+            <div className="flex gap-2 justify-end">
+              <Button
+                variant="outline"
+                className="border-gray-200 text-gray-600 h-9"
+                onClick={() => setRegenModal(null)}
+              >
+                Mégse
+              </Button>
+              <Button
+                className="bg-violet-600 text-white hover:bg-violet-700 h-9"
+                onClick={() => {
+                  handleRegenerateSingle(regenModal.variant, regenModal.index, regenExtraPrompt.trim() || undefined);
+                  setRegenModal(null);
+                }}
+              >
+                Generálás
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

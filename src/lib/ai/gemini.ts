@@ -290,10 +290,13 @@ wearing the exact garment shown in the reference image.
 Generate ONE single standalone photograph — NOT a collage, NOT a triptych, NOT a grid. \
 One image, one pose, one scene.
 
-GARMENT ACCURACY — CRITICAL:
-Reproduce the garment with absolute color fidelity. Preserve the exact hue, saturation, and brightness. \
-All design details must be clearly visible: stitching, seams, buttons, zippers, patterns, prints, \
-embroidery, texture, and fabric weave. Do not alter, simplify, or reinterpret any detail.
+GARMENT ACCURACY — ABSOLUTE REQUIREMENT:
+The model MUST wear EXACTLY the garment shown in the reference image(s). This is the most critical requirement.
+- The garment in this photo must be PIXEL-PERFECT identical to the reference: same style, cut, color, fabric, collar, buttons, zipper, pockets, pattern, print, texture, stitching — every single detail.
+- Do NOT substitute, simplify, reinterpret, or change ANY aspect of the garment. Even subtle differences are unacceptable.
+- Reproduce the EXACT hue, saturation, brightness, and fabric sheen. No color grading or stylization.
+- If unsure about any garment detail, refer back to the reference image — never improvise.
+- This garment consistency requirement overrides all other creative decisions.
 
 MODEL APPEARANCE:
 The model has ${hairDesc}, light skin tone, natural makeup, pleasant neutral expression. \
@@ -346,6 +349,8 @@ function buildSinglePhotoPrompt(
 
   return `${base}
 
+IMPORTANT: The reference image(s) above show the EXACT garment the model must wear. Do not change the garment in any way.
+
 POSE / SCENE (this specific photo):
 ${pose}${kwLine}`;
 }
@@ -361,6 +366,7 @@ ${pose}${kwLine}`;
  * @param sceneType      "photoshoot" (studio) or "lifestyle" (outdoor)
  * @param keywords       Extra style keywords appended to the prompt
  * @param clientApiKey   Optional per-workspace Gemini key
+ * @param extraPrompt    Optional additional instructions appended to this specific photo's prompt
  */
 export async function generateModelPhoto(
   imageBuffers: Buffer[],
@@ -371,7 +377,8 @@ export async function generateModelPhoto(
   keywords: string[],
   clientApiKey?: string | null,
   modelRefBuffer?: Buffer | null,
-  modelRefMime?: string | null
+  modelRefMime?: string | null,
+  extraPrompt?: string
 ): Promise<GhostMannequinImageResult> {
   const apiKey = resolveApiKey(clientApiKey);
   const genAI  = new GoogleGenerativeAI(apiKey);
@@ -403,14 +410,18 @@ export async function generateModelPhoto(
   const prompt = buildSinglePhotoPrompt(variant, sceneType, poseIndex, keywords);
 
   const refInstruction = modelRefBuffer
-    ? `\n\nMODEL APPEARANCE REFERENCE — CRITICAL: The first image provided is a reference photo of the model. The generated model must closely resemble this person: same face structure, hair color, hair style, and overall appearance. Do not change the model's appearance beyond what the pose requires.`
+    ? `\n\nMODEL APPEARANCE REFERENCE: The FIRST image is a reference photo of the desired model appearance. Match this person's face structure, hair color, and hair style closely.\n\nGARMENT REFERENCE: The REMAINING image(s) show the EXACT garment that must be worn. Every detail of this garment is mandatory.`
+    : `\n\nGARMENT REFERENCE: The image(s) above show the EXACT garment that must be worn in this photo. Reproduce every detail faithfully.`;
+
+  const extraLine = extraPrompt?.trim()
+    ? `\n\nAdditional instructions for this specific photo: ${extraPrompt.trim()}`
     : "";
 
-  const fullPrompt = `${prompt}${refInstruction}`;
+  const fullPrompt = `${prompt}${refInstruction}${extraLine}`;
 
   // Image order: [model reference (if any)] → [garment photos] → [text prompt]
   const requestWithRef    = { contents: [{ role: "user", parts: [...refPart, ...garmentParts, { text: fullPrompt }] }] };
-  const requestWithoutRef = { contents: [{ role: "user", parts: [...garmentParts, { text: prompt }] }] };
+  const requestWithoutRef = { contents: [{ role: "user", parts: [...garmentParts, { text: fullPrompt }] }] };
 
   const MAX_ATTEMPTS = 2;
   const RETRY_DELAY_MS = 10_000;

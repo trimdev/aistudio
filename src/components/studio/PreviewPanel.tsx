@@ -451,16 +451,30 @@ function ResultView({ result, versions, activeVersionIndex, onSelectVersion, onR
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayUrl]);
 
+  const getPos = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current!;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top)  * scaleY,
+    };
+  };
+
   const startDraw = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!drawingMode) return;
-    isDrawingRef.current = true;
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    lastPosRef.current = {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-    };
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const pos = getPos(e);
+    isDrawingRef.current = true;
+    lastPosRef.current = pos;
+    // Prime the path at the exact click position — prevents the first segment
+    // from jumping from a stale anchor to the cursor.
+    ctx.beginPath();
+    ctx.moveTo(pos.x, pos.y);
   };
 
   const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -469,14 +483,12 @@ function ResultView({ result, versions, activeVersionIndex, onSelectVersion, onR
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const pos = getPos(e);
     ctx.beginPath();
     ctx.moveTo(lastPosRef.current.x, lastPosRef.current.y);
-    ctx.lineTo(x, y);
+    ctx.lineTo(pos.x, pos.y);
     ctx.stroke();
-    lastPosRef.current = { x, y };
+    lastPosRef.current = pos;
     setHasDrawing(true);
   };
 
