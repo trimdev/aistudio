@@ -22,14 +22,6 @@ interface WorkspaceRow {
   updated_at: string;
 }
 
-interface ProjectRow {
-  id: string;
-  workspace_id: string;
-  name: string;
-  status: string;
-  created_at: string;
-  output_image: string | null;
-}
 
 function formatHuDate(d: string) {
   const date = new Date(d);
@@ -87,49 +79,54 @@ export default async function AdminPage() {
 
   const supabase = createSupabaseAdminClient();
 
-  const [workspacesRes, projectsRes, usersRes] = await Promise.all([
+  const [workspacesRes, projectsRes, collectionsRes, usersRes] = await Promise.all([
     supabase
       .from("workspaces")
       .select("id, name, user_id, role, modules, created_at, updated_at")
       .order("created_at", { ascending: false }),
     supabase
       .from("projects")
-      .select("id, workspace_id, name, status, created_at, output_image")
-      .order("created_at", { ascending: false }),
+      .select("id, workspace_id, status, updated_at, output_image")
+      .order("updated_at", { ascending: false }),
+    supabase
+      .from("project_collections")
+      .select("id, workspace_id"),
     supabase.auth.admin.listUsers({ perPage: 1000 }),
   ]);
 
-  const allWorkspaces = (workspacesRes.data ?? []) as WorkspaceRow[];
-  const allProjects = (projectsRes.data ?? []) as ProjectRow[];
-  const authUsers = usersRes.data?.users ?? [];
-  const userMap = new Map(authUsers.map((u) => [u.id, u.email ?? "—"]));
+  const allWorkspaces  = (workspacesRes.data   ?? []) as WorkspaceRow[];
+  const allProjects    = (projectsRes.data      ?? []) as { id: string; workspace_id: string; status: string; updated_at: string; output_image: string | null }[];
+  const allCollections = (collectionsRes.data   ?? []) as { id: string; workspace_id: string }[];
+  const authUsers      = usersRes.data?.users   ?? [];
+  const userMap        = new Map(authUsers.map((u) => [u.id, u.email ?? "—"]));
 
-  const now = new Date();
+  const now        = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
 
   const completed = allProjects.filter((p) => p.status === "completed");
   const stats = {
-    workspaces: allWorkspaces.length,
+    workspaces:       allWorkspaces.filter((ws) => ws.role !== "admin").length,
     totalGenerations: completed.length,
-    todayGenerations: completed.filter((p) => p.created_at >= todayStart).length,
-    monthGenerations: completed.filter((p) => p.created_at >= monthStart).length,
+    todayGenerations: completed.filter((p) => p.updated_at >= todayStart).length,
+    monthGenerations: completed.filter((p) => p.updated_at >= monthStart).length,
   };
 
   const clients = allWorkspaces.filter((ws) => ws.role !== "admin").map((ws) => {
-    const wsProjects = allProjects.filter((p) => p.workspace_id === ws.id);
-    const wsCompleted = wsProjects.filter((p) => p.status === "completed");
-    const wsToday = wsCompleted.filter((p) => p.created_at >= todayStart).length;
-    const wsMonth = wsCompleted.filter((p) => p.created_at >= monthStart).length;
-    const lastActivity = wsProjects[0]?.created_at ?? ws.updated_at;
-    const recentOutput = wsCompleted[0]?.output_image ?? null;
+    const wsCollections = allCollections.filter((c) => c.workspace_id === ws.id);
+    const wsCompleted   = allProjects.filter((p) => p.workspace_id === ws.id && p.status === "completed");
+    const wsToday       = wsCompleted.filter((p) => p.updated_at >= todayStart).length;
+    const wsMonth       = wsCompleted.filter((p) => p.updated_at >= monthStart).length;
+    const lastProject   = allProjects.filter((p) => p.workspace_id === ws.id)[0];
+    const lastActivity  = lastProject?.updated_at ?? ws.updated_at;
+    const recentOutput  = wsCompleted[0]?.output_image ?? null;
     return {
       ...ws,
-      email: userMap.get(ws.user_id) ?? "—",
-      projectCount: wsProjects.length,
+      email:          userMap.get(ws.user_id) ?? "—",
+      projectCount:   wsCollections.length,
       completedCount: wsCompleted.length,
-      todayCount: wsToday,
-      monthCount: wsMonth,
+      todayCount:     wsToday,
+      monthCount:     wsMonth,
       lastActivity,
       recentOutput,
     };
