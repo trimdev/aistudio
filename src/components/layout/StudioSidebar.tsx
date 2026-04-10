@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useLanguage } from "@/components/providers/LanguageProvider";
-import { LayoutDashboard, FolderOpen, Wand2, Settings, LogOut, ShieldCheck, BookOpen } from "lucide-react";
+import { LayoutDashboard, FolderOpen, Wand2, Settings, LogOut, ShieldCheck, BookOpen, Brain, ChevronDown, ChevronRight } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 
 export function StudioSidebar() {
@@ -15,6 +15,8 @@ export function StudioSidebar() {
   const { t, lang, setLang } = useLanguage();
   const [user, setUser] = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [memories, setMemories] = useState<{ id: string; note: string }[]>([]);
+  const [memoriesOpen, setMemoriesOpen] = useState(true);
 
   const NAV_ITEMS = [
     { href: "/studio",          icon: LayoutDashboard, label: t("nav_dashboard") },
@@ -41,6 +43,10 @@ export function StudioSidebar() {
           .single();
         setIsAdmin(ws?.role === "admin");
       }
+      fetch("/api/workspace-memory")
+        .then((r) => r.json())
+        .then((d) => { if (d.memories) setMemories(d.memories); })
+        .catch(() => {});
     })();
   }, []);
 
@@ -86,6 +92,32 @@ export function StudioSidebar() {
           );
         })}
       </nav>
+
+      {/* Memória */}
+      {memories.length > 0 && (
+        <div className="border-t border-gray-100">
+          <button
+            onClick={() => setMemoriesOpen((o) => !o)}
+            className="w-full flex items-center gap-2 px-4 py-3 text-xs font-bold text-gray-500 hover:text-gray-800 transition-colors"
+          >
+            <Brain className="w-3.5 h-3.5 shrink-0" />
+            <span className="flex-1 text-left">Memória</span>
+            {memoriesOpen
+              ? <ChevronDown className="w-3 h-3" />
+              : <ChevronRight className="w-3 h-3" />}
+          </button>
+          {memoriesOpen && (
+            <ul className="px-3 pb-3 space-y-1.5 max-h-52 overflow-y-auto">
+              {memories.map((m) => (
+                <li key={m.id} className="flex items-start gap-1.5 text-[11px] text-gray-600 leading-relaxed bg-gray-50 rounded-lg px-2.5 py-1.5">
+                  <span className="text-gray-400 mt-0.5 shrink-0">•</span>
+                  <span>{m.note}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       {/* Language switcher */}
       <div className="px-4 py-3 border-t border-gray-100">
