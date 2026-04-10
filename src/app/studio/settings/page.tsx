@@ -15,6 +15,7 @@ interface Settings {
   workspaceId: string;
   workspaceName: string;
   hasCustomApiKey: boolean;
+  modules: string[];
 }
 
 interface ModelRefs {
@@ -273,42 +274,44 @@ export default function SettingsPage() {
         </div>
       </Card>
 
-      {/* Model reference photos — Fashion Studio */}
-      <Card className="border-gray-100 shadow-none p-6 mb-6">
-        <div className="flex items-center gap-2 mb-1">
-          <User className="w-4 h-4 text-gray-600" />
-          <h2 className="font-semibold text-gray-900">Modell referencia képek</h2>
-          <Badge className="ml-2 text-[11px] px-2 border-0 bg-violet-100 text-violet-700">Fashion Studio</Badge>
-        </div>
-        <p className="text-xs text-gray-500 mb-5">
-          Töltsd fel a saját modell referencia képeidet. A generált fotókon a modellek ezekre fognak hasonlítani.
-        </p>
+      {/* Model reference photos — Fashion Studio only */}
+      {settings.modules.includes("fashion") && (
+        <Card className="border-gray-100 shadow-none p-6 mb-6">
+          <div className="flex items-center gap-2 mb-1">
+            <User className="w-4 h-4 text-gray-600" />
+            <h2 className="font-semibold text-gray-900">Modell referencia képek</h2>
+            <Badge className="ml-2 text-[11px] px-2 border-0 bg-violet-100 text-violet-700">Fashion Studio</Badge>
+          </div>
+          <p className="text-xs text-gray-500 mb-5">
+            Töltsd fel a saját modell referencia képeidet. A generált fotókon a modellek ezekre fognak hasonlítani.
+          </p>
 
-        <div className="grid grid-cols-2 gap-4">
-          <ModelRefUpload
-            variant="blonde"
-            label="Szőke modell"
-            borderColor="border-amber-200"
-            bgColor="bg-amber-50/40"
-            iconColor="text-amber-500"
-            textColor="text-amber-700"
-            currentUrl={modelRefs.blonde}
-            onUploaded={(url) => setModelRefs((r) => ({ ...r, blonde: url }))}
-            onRemoved={() => setModelRefs((r) => ({ ...r, blonde: null }))}
-          />
-          <ModelRefUpload
-            variant="brunette"
-            label="Barna modell"
-            borderColor="border-stone-200"
-            bgColor="bg-stone-50/40"
-            iconColor="text-stone-500"
-            textColor="text-stone-700"
-            currentUrl={modelRefs.brunette}
-            onUploaded={(url) => setModelRefs((r) => ({ ...r, brunette: url }))}
-            onRemoved={() => setModelRefs((r) => ({ ...r, brunette: null }))}
-          />
-        </div>
-      </Card>
+          <div className="grid grid-cols-2 gap-4">
+            <ModelRefUpload
+              variant="blonde"
+              label="Szőke modell"
+              borderColor="border-amber-200"
+              bgColor="bg-amber-50/40"
+              iconColor="text-amber-500"
+              textColor="text-amber-700"
+              currentUrl={modelRefs.blonde}
+              onUploaded={(url) => setModelRefs((r) => ({ ...r, blonde: url }))}
+              onRemoved={() => setModelRefs((r) => ({ ...r, blonde: null }))}
+            />
+            <ModelRefUpload
+              variant="brunette"
+              label="Barna modell"
+              borderColor="border-stone-200"
+              bgColor="bg-stone-50/40"
+              iconColor="text-stone-500"
+              textColor="text-stone-700"
+              currentUrl={modelRefs.brunette}
+              onUploaded={(url) => setModelRefs((r) => ({ ...r, brunette: url }))}
+              onRemoved={() => setModelRefs((r) => ({ ...r, brunette: null }))}
+            />
+          </div>
+        </Card>
+      )}
 
       <Separator className="my-6 bg-gray-100" />
 

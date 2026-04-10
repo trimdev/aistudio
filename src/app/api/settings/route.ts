@@ -11,6 +11,7 @@ export async function GET() {
     workspaceId: workspace.id,
     workspaceName: workspace.name,
     hasCustomApiKey: !!workspace.gemini_api_key,
+    modules: workspace.modules ?? ["fashion"],
     email: user.email,
   });
 }
