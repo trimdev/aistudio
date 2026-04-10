@@ -1,13 +1,18 @@
 import Link from "next/link";
-import { ArrowRight, Wand2, FolderOpen, ImageIcon, Clock } from "lucide-react";
+import { ArrowRight, Wand2, FolderOpen, ImageIcon, Clock, DollarSign } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { getServerUser } from "@/lib/supabase/server";
+import { getServerUser, createSupabaseAdminClient } from "@/lib/supabase/server";
+import { getEffectiveWorkspace } from "@/lib/workspace";
 import { listCollections } from "@/lib/collections";
+
+// Approximate cost per completed generation (Gemini 2.5 Flash Image)
+const GHOST_COST_USD = 0.005;  // 2 large images in + prompt + image out
+const MODEL_COST_USD = 0.008;  // 3-4 images in + model ref + image out
 
 export default async function StudioDashboard() {
   const user = await getServerUser();
-  const collections = await listCollections();
+  const [collections, workspace] = await Promise.all([listCollections(), getEffectiveWorkspace()]);
   const recent = collections.slice(0, 3);
 
   const totalCompleted = collections.reduce((sum, c) => sum + c.completedCount, 0);
@@ -16,6 +21,20 @@ export default async function StudioDashboard() {
     const now = new Date();
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   }).length;
+
+  // Cost estimate: query prompt_used for all completed photos
+  const { data: completedRows } = await createSupabaseAdminClient()
+    .from("projects")
+    .select("prompt_used")
+    .eq("workspace_id", workspace.id)
+    .eq("status", "completed");
+
+  const ghostCount = completedRows?.filter((p) => p.prompt_used && !p.prompt_used.startsWith("model-")).length ?? 0;
+  const modelCount = completedRows?.filter((p) => p.prompt_used?.startsWith("model-")).length ?? 0;
+  const estimatedCostUsd = ghostCount * GHOST_COST_USD + modelCount * MODEL_COST_USD;
+  const costDisplay = estimatedCostUsd < 0.01
+    ? "< $0.01"
+    : `$${estimatedCostUsd.toFixed(2)}`;
 
   const displayName =
     user?.user_metadata?.full_name ||
@@ -30,17 +49,57 @@ export default async function StudioDashboard() {
         <p className="text-gray-500 mt-1 text-sm">Az AI szellemfigura stúdiód — alkossunk valami nagyszerűt.</p>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
-        {[
-          { label: "Összes projekt", value: collections.length },
-          { label: "Elkészült képek", value: totalCompleted },
-          { label: "Ezen a hónapon", value: thisMonth },
-        ].map(({ label, value }) => (
-          <Card key={label} className="p-5 border-gray-100 shadow-none">
-            <p className="text-2xl font-semibold text-gray-900">{value}</p>
-            <p className="text-xs text-gray-500 mt-0.5">{label}</p>
-          </Card>
-        ))}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <Card className="p-5 border-0 shadow-none bg-violet-50">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-2xl font-bold text-violet-700">{collections.length}</p>
+              <p className="text-xs text-violet-500 mt-0.5 font-medium">Összes projekt</p>
+            </div>
+            <div className="w-8 h-8 rounded-lg bg-violet-100 flex items-center justify-center">
+              <FolderOpen className="w-4 h-4 text-violet-600" />
+            </div>
+          </div>
+        </Card>
+
+        <Card className="p-5 border-0 shadow-none bg-emerald-50">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-2xl font-bold text-emerald-700">{totalCompleted}</p>
+              <p className="text-xs text-emerald-600 mt-0.5 font-medium">Elkészült képek</p>
+            </div>
+            <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center">
+              <ImageIcon className="w-4 h-4 text-emerald-600" />
+            </div>
+          </div>
+        </Card>
+
+        <Card className="p-5 border-0 shadow-none bg-sky-50">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-2xl font-bold text-sky-700">{thisMonth}</p>
+              <p className="text-xs text-sky-600 mt-0.5 font-medium">Ezen a hónapon</p>
+            </div>
+            <div className="w-8 h-8 rounded-lg bg-sky-100 flex items-center justify-center">
+              <Clock className="w-4 h-4 text-sky-600" />
+            </div>
+          </div>
+        </Card>
+
+        <Card className="p-5 border-0 shadow-none bg-amber-50">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-2xl font-bold text-amber-700">{costDisplay}</p>
+              <p className="text-xs text-amber-600 mt-0.5 font-medium">Becsült API költség</p>
+            </div>
+            <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
+              <DollarSign className="w-4 h-4 text-amber-600" />
+            </div>
+          </div>
+          <p className="text-[10px] text-amber-400 mt-2">
+            {ghostCount} ghost · {modelCount} modell · becsült
+          </p>
+        </Card>
       </div>
 
       <Card className="border-dashed border-gray-200 shadow-none mb-8 bg-white">
