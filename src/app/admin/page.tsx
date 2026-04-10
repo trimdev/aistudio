@@ -98,7 +98,7 @@ export default async function AdminPage() {
       .order("created_at", { ascending: false }),
     supabase
       .from("projects")
-      .select("id, workspace_id, status, updated_at, output_image, prompt_used, input_tokens, output_tokens")
+      .select("id, workspace_id, status, updated_at, output_image, prompt_used")
       .order("updated_at", { ascending: false }),
     supabase
       .from("project_collections")
@@ -114,8 +114,6 @@ export default async function AdminPage() {
     updated_at: string;
     output_image: string | null;
     prompt_used: string | null;
-    input_tokens: number | null;
-    output_tokens: number | null;
   }[];
   const allCollections = (collectionsRes.data   ?? []) as { id: string; workspace_id: string }[];
   const authUsers      = usersRes.data?.users   ?? [];
@@ -162,8 +160,10 @@ export default async function AdminPage() {
     const errorDenom = wsFailed + wsCompleted.length;
     const errorRate = errorDenom > 0 ? Math.round((wsFailed / errorDenom) * 100) : 0;
 
+    // Estimate cost from prompt_used (no token columns on admin query)
+    // Ghost: ~14k in + 1k out ≈ $0.00135; Model: ~10k in + 1.5k out ≈ $0.00120
     const rawCost = wsCompleted.reduce((sum, p) => {
-      return sum + (p.input_tokens ?? 0) * 0.075 / 1_000_000 + (p.output_tokens ?? 0) * 0.30 / 1_000_000;
+      return sum + (p.prompt_used?.startsWith("model-") ? 0.0012 : 0.00135);
     }, 0);
     const costUsd = formatCostWorkspace(rawCost);
 
@@ -197,7 +197,7 @@ export default async function AdminPage() {
   const totalCostRaw = allProjects
     .filter((p) => p.status === "completed")
     .reduce((sum, p) => {
-      return sum + (p.input_tokens ?? 0) * 0.075 / 1_000_000 + (p.output_tokens ?? 0) * 0.30 / 1_000_000;
+      return sum + (p.prompt_used?.startsWith("model-") ? 0.0012 : 0.00135);
     }, 0);
   const totalCostFormatted = formatCostGlobal(totalCostRaw);
 
