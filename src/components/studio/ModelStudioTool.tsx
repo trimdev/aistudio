@@ -312,6 +312,8 @@ export function ModelStudioTool({ collectionId }: ModelStudioToolProps) {
 
   // ── Image handling
   const handleImageChange = useCallback((key: keyof UploadedImages, file: File | null) => {
+    // Uploading a photo deselects any ghost project (uploaded files take priority)
+    if (file) setSelectedGhostId(null);
     setImages((prev) => {
       const next = { ...prev, [key]: file };
       setPreviews((old) => {

@@ -428,7 +428,7 @@ export async function generateModelPhoto(
   const prompt = buildSinglePhotoPrompt(variant, sceneType, poseIndex, keywords);
 
   const refInstruction = modelRefBuffer
-    ? `\n\nIMAGE ROLES:\n- Image 1 (first): Model appearance reference — match face structure, hair color, and style.\n- Images 2+ (remaining): THE ACTUAL GARMENT to copy onto the model. These images show the PHYSICAL PRODUCT. The model must wear THIS EXACT GARMENT — same type, length, color, collar, quilting, hardware, and all details. Do not swap it for any other garment.`
+    ? `\n\nIMAGE ROLES:\n- Image 1 (first): Model APPEARANCE reference only — match face structure, hair color, and hair style. CRITICAL: completely IGNORE any clothing or garment the person in this image is wearing. The clothing in Image 1 is irrelevant and must NOT influence what garment you generate.\n- Images 2+ (remaining): THE ACTUAL GARMENT to copy. These show the PHYSICAL PRODUCT the model must wear — same type, length, color, collar, quilting, hardware, and every detail. Do not swap it for any other garment under any circumstances.`
     : `\n\nGARMENT IMAGES: The uploaded image(s) show the PHYSICAL GARMENT the model must wear. Copy it exactly — same type, length, color, collar, quilting, hardware, and all visible details. Do not replace it with a different or "similar" garment.`;
 
   const extraLine = extraPrompt?.trim()
