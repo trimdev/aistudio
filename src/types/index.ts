@@ -46,6 +46,8 @@ export interface Project {
   output_image: string | null;
   prompt_used: string | null;
   model_used: string;
+  input_tokens: number | null;
+  output_tokens: number | null;
   created_at: string;
   updated_at: string;
 }

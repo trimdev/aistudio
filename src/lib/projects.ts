@@ -81,7 +81,7 @@ export async function createProject(name: string, collectionId?: string | null):
 
 export async function updateProject(
   id: string,
-  updates: Partial<Pick<Project, "status" | "input_images" | "output_image" | "prompt_used">>
+  updates: Partial<Pick<Project, "status" | "input_images" | "output_image" | "prompt_used" | "input_tokens" | "output_tokens">>
 ): Promise<void> {
   await admin().from("projects").update(updates).eq("id", id);
 }

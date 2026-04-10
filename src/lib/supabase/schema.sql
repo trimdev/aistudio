@@ -48,6 +48,8 @@ create table if not exists projects (
   output_image    text,
   prompt_used     text,
   model_used      text not null default 'gemini-2.5-flash-image',
+  input_tokens    integer,
+  output_tokens   integer,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );

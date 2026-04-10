@@ -6,9 +6,9 @@ import { getServerUser, createSupabaseAdminClient } from "@/lib/supabase/server"
 import { getEffectiveWorkspace } from "@/lib/workspace";
 import { listCollections } from "@/lib/collections";
 
-// Approximate cost per completed generation (Gemini 2.5 Flash Image)
-const GHOST_COST_USD = 0.005;  // 2 large images in + prompt + image out
-const MODEL_COST_USD = 0.008;  // 3-4 images in + model ref + image out
+// Gemini 2.5 Flash pricing (per 1M tokens)
+const INPUT_COST_PER_M  = 0.075;   // $0.075 / 1M input tokens
+const OUTPUT_COST_PER_M = 0.30;    // $0.30  / 1M output tokens
 
 export default async function StudioDashboard() {
   const user = await getServerUser();
@@ -22,19 +22,36 @@ export default async function StudioDashboard() {
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   }).length;
 
-  // Cost estimate: query prompt_used for all completed photos
+  // Real cost from actual Gemini usageMetadata stored per generation
   const { data: completedRows } = await createSupabaseAdminClient()
     .from("projects")
-    .select("prompt_used")
+    .select("prompt_used, input_tokens, output_tokens")
     .eq("workspace_id", workspace.id)
     .eq("status", "completed");
 
-  const ghostCount = completedRows?.filter((p) => p.prompt_used && !p.prompt_used.startsWith("model-")).length ?? 0;
-  const modelCount = completedRows?.filter((p) => p.prompt_used?.startsWith("model-")).length ?? 0;
-  const estimatedCostUsd = ghostCount * GHOST_COST_USD + modelCount * MODEL_COST_USD;
-  const costDisplay = estimatedCostUsd < 0.01
+  const rows = completedRows ?? [];
+  const ghostCount = rows.filter((p) => p.prompt_used && !p.prompt_used.startsWith("model-")).length;
+  const modelCount = rows.filter((p) => p.prompt_used?.startsWith("model-")).length;
+
+  const totalInputTokens  = rows.reduce((s, p) => s + (p.input_tokens  ?? 0), 0);
+  const totalOutputTokens = rows.reduce((s, p) => s + (p.output_tokens ?? 0), 0);
+
+  // For rows without token data (historical), fall back to estimates
+  const rowsWithTokens = rows.filter((p) => p.input_tokens !== null).length;
+  const rowsWithoutTokens = rows.length - rowsWithTokens;
+  const fallbackInputTokens  = rowsWithoutTokens * 14_000;  // ~14k input tokens per gen (avg)
+  const fallbackOutputTokens = rowsWithoutTokens * 1_000;   // ~1k output tokens per gen
+
+  const effectiveInput  = totalInputTokens  + fallbackInputTokens;
+  const effectiveOutput = totalOutputTokens + fallbackOutputTokens;
+
+  const costUsd = (effectiveInput / 1_000_000) * INPUT_COST_PER_M
+               + (effectiveOutput / 1_000_000) * OUTPUT_COST_PER_M;
+
+  const costDisplay = costUsd < 0.001
     ? "< $0.01"
-    : `$${estimatedCostUsd.toFixed(2)}`;
+    : `$${costUsd.toFixed(3)}`;
+  const hasRealData = rowsWithTokens > 0;
 
   const displayName =
     user?.user_metadata?.full_name ||
@@ -97,7 +114,8 @@ export default async function StudioDashboard() {
             </div>
           </div>
           <p className="text-[10px] text-amber-400 mt-2">
-            {ghostCount} ghost · {modelCount} modell · becsült
+            {(effectiveInput / 1000).toFixed(0)}k in · {(effectiveOutput / 1000).toFixed(0)}k out token
+            {!hasRealData && " · becsült"}
           </p>
         </Card>
       </div>

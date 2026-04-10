@@ -156,7 +156,7 @@ export async function POST(req: NextRequest) {
       // No reference photo set — continue without it
     }
 
-    const { imageBuffer, mimeType } = await generateModelPhoto(
+    const { imageBuffer, mimeType, inputTokens, outputTokens } = await generateModelPhoto(
       buffers,
       mimeTypes,
       variant,
@@ -186,6 +186,8 @@ export async function POST(req: NextRequest) {
       status: "completed",
       output_image: outputPath,
       prompt_used: `model-${variant}`,
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
     });
 
     const version = await createVersion(

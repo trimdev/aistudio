@@ -122,7 +122,7 @@ export async function POST(req: NextRequest) {
       : refinePrompt;
 
     // Generate image
-    const { imageBuffer, mimeType } = await generateGhostMannequin(
+    const { imageBuffer, mimeType, inputTokens, outputTokens } = await generateGhostMannequin(
       buffers,
       mimeTypes,
       workspace?.gemini_api_key,
@@ -144,6 +144,8 @@ export async function POST(req: NextRequest) {
       status: "completed",
       output_image: outputPath,
       prompt_used: MODEL_INFO.id,
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
     });
 
     // Log the initial version

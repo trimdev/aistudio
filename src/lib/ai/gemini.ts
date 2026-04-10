@@ -96,6 +96,8 @@ This must look like a premium fashion webshop product image ready for upload.`;
 export interface GhostMannequinImageResult {
   imageBuffer: Buffer;
   mimeType: string;
+  inputTokens: number;
+  outputTokens: number;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -171,9 +173,12 @@ export async function generateGhostMannequin(
     throw new Error(`Gemini did not return an image. Details: ${detail}`);
   }
 
+  const usage = result.response.usageMetadata;
   return {
     imageBuffer: Buffer.from(imgPart.inlineData.data, "base64"),
     mimeType: (imgPart.inlineData.mimeType as string) || "image/png",
+    inputTokens: usage?.promptTokenCount ?? 0,
+    outputTokens: usage?.candidatesTokenCount ?? 0,
   };
 }
 
@@ -275,9 +280,12 @@ User's refinement request: ${feedback.trim()}`;
     throw new Error(`Gemini did not return an image. Details: ${detail}`);
   }
 
+  const usage = result.response.usageMetadata;
   return {
     imageBuffer: Buffer.from(imgPart.inlineData.data, "base64"),
     mimeType: (imgPart.inlineData.mimeType as string) || "image/png",
+    inputTokens: usage?.promptTokenCount ?? 0,
+    outputTokens: usage?.candidatesTokenCount ?? 0,
   };
 }
 
@@ -453,9 +461,12 @@ export async function generateModelPhoto(
     const imgPart = parts.find((p: any) => p.inlineData?.data);
 
     if (imgPart && "inlineData" in imgPart && imgPart.inlineData?.data) {
+      const usage = result.response.usageMetadata;
       return {
         imageBuffer: Buffer.from(imgPart.inlineData.data, "base64"),
         mimeType: (imgPart.inlineData.mimeType as string) || "image/png",
+        inputTokens: usage?.promptTokenCount ?? 0,
+        outputTokens: usage?.candidatesTokenCount ?? 0,
       };
     }
 
@@ -481,9 +492,12 @@ export async function generateModelPhoto(
       const imgPart = parts.find((p: any) => p.inlineData?.data);
 
       if (imgPart && "inlineData" in imgPart && imgPart.inlineData?.data) {
+        const usage = result.response.usageMetadata;
         return {
           imageBuffer: Buffer.from(imgPart.inlineData.data, "base64"),
           mimeType: (imgPart.inlineData.mimeType as string) || "image/png",
+          inputTokens: usage?.promptTokenCount ?? 0,
+          outputTokens: usage?.candidatesTokenCount ?? 0,
         };
       }
 
