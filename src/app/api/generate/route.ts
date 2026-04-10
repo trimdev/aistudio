@@ -7,6 +7,7 @@ import { createVersion } from "@/lib/versions";
 import { getServerUser } from "@/lib/supabase/server";
 import { listWorkspaceMemories } from "@/lib/workspace-memory";
 import { buildMemoryPromptBlock } from "@/lib/memory-utils";
+import { createCollection, touchCollection } from "@/lib/collections";
 
 export const maxDuration = 300;
 
@@ -44,8 +45,9 @@ export async function POST(req: NextRequest) {
   const frontFile = formData.get("front") as File | null;
   const backFile = formData.get("back") as File | null;
   const sideFile = formData.get("side") as File | null;
-  const projectName = (formData.get("projectName") as string) || "Ghost Mannequin Shot";
+  const projectName = (formData.get("projectName") as string) || "Névtelen fotó";
   const refinePrompt = (formData.get("refinePrompt") as string) || undefined;
+  const collectionId = (formData.get("collectionId") as string) || null;
 
   if (!frontFile || !backFile) {
     return NextResponse.json({ error: "Front and back images are required." }, { status: 400 });
@@ -72,7 +74,15 @@ export async function POST(req: NextRequest) {
   }
 
   const workspace = await getWorkspace();
-  const project = await createProject(projectName);
+
+  // Resolve or create a collection for this generation
+  let resolvedCollectionId = collectionId;
+  if (!resolvedCollectionId) {
+    const col = await createCollection(projectName);
+    resolvedCollectionId = col.id;
+  }
+
+  const project = await createProject(projectName, resolvedCollectionId);
 
   try {
     await updateProject(project.id, { status: "processing" });
@@ -131,7 +141,8 @@ export async function POST(req: NextRequest) {
       "ai"
     );
 
-    return NextResponse.json({ projectId: project.id, outputUrl, outputPath, mimeType, versionNumber: version.version_number, rateLimitRemaining: remaining });
+    await touchCollection(resolvedCollectionId);
+    return NextResponse.json({ projectId: project.id, collectionId: resolvedCollectionId, outputUrl, outputPath, mimeType, versionNumber: version.version_number, rateLimitRemaining: remaining });
   } catch (err: unknown) {
     await updateProject(project.id, { status: "failed" });
     console.error("[generate]", err);

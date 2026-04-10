@@ -1,3 +1,4 @@
+import type React from "react";
 import { createSupabaseAdminClient, getServerUser } from "@/lib/supabase/server";
 import { getWorkspace } from "@/lib/workspace";
 import { redirect } from "next/navigation";
@@ -7,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Users, Zap, TrendingUp, Image, ArrowRight,
-  FolderOpen, Clock, Activity, LogIn,
+  FolderOpen, Clock, Activity, LogIn, Ghost, Sofa,
 } from "lucide-react";
 import { enterWorkspace } from "./actions";
 
@@ -16,6 +17,7 @@ interface WorkspaceRow {
   name: string;
   user_id: string;
   role: string;
+  modules: string[] | null;
   created_at: string;
   updated_at: string;
 }
@@ -46,6 +48,26 @@ function getInitials(email: string): string {
   return parts.slice(0, 2).map((p) => p[0]?.toUpperCase() ?? "").join("") || "?";
 }
 
+const MODULE_META: Record<string, { label: string; style: string; icon: React.ReactNode }> = {
+  fashion:   { label: "Fashion Studio",   style: "bg-violet-100 text-violet-700", icon: <Ghost className="w-3 h-3" /> },
+  furniture: { label: "Furniture Studio", style: "bg-amber-100 text-amber-700",   icon: <Sofa  className="w-3 h-3" /> },
+};
+
+function ModuleBadges({ modules }: { modules: string[] | null }) {
+  const active = (modules ?? ["fashion"]).filter((m) => m in MODULE_META);
+  if (active.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1.5 mb-3">
+      {active.map((m) => (
+        <span key={m} className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${MODULE_META[m].style}`}>
+          {MODULE_META[m].icon}
+          {MODULE_META[m].label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function avatarColor(email: string): string {
   const colors = [
     "bg-violet-500", "bg-blue-500", "bg-emerald-500",
@@ -68,7 +90,7 @@ export default async function AdminPage() {
   const [workspacesRes, projectsRes, usersRes] = await Promise.all([
     supabase
       .from("workspaces")
-      .select("id, name, user_id, role, created_at, updated_at")
+      .select("id, name, user_id, role, modules, created_at, updated_at")
       .order("created_at", { ascending: false }),
     supabase
       .from("projects")
@@ -94,7 +116,7 @@ export default async function AdminPage() {
     monthGenerations: completed.filter((p) => p.created_at >= monthStart).length,
   };
 
-  const clients = allWorkspaces.map((ws) => {
+  const clients = allWorkspaces.filter((ws) => ws.role !== "admin").map((ws) => {
     const wsProjects = allProjects.filter((p) => p.workspace_id === ws.id);
     const wsCompleted = wsProjects.filter((p) => p.status === "completed");
     const wsToday = wsCompleted.filter((p) => p.created_at >= todayStart).length;
@@ -184,6 +206,9 @@ export default async function AdminPage() {
                     {client.role}
                   </Badge>
                 </div>
+
+                {/* Active modules */}
+                <ModuleBadges modules={client.modules} />
 
                 {/* Stats strip */}
                 <div className="grid grid-cols-3 gap-2 mb-4">

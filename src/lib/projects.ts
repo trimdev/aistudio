@@ -68,11 +68,11 @@ export async function getProject(id: string): Promise<ProjectWithUrls | null> {
   return enrichProject(data as Project);
 }
 
-export async function createProject(name: string): Promise<Project> {
+export async function createProject(name: string, collectionId?: string | null): Promise<Project> {
   const workspace = await getEffectiveWorkspace();
   const { data, error } = await admin()
     .from("projects")
-    .insert({ workspace_id: workspace.id, name, status: "pending" })
+    .insert({ workspace_id: workspace.id, name, status: "pending", collection_id: collectionId ?? null })
     .select()
     .single();
   if (error) throw error;
@@ -84,6 +84,18 @@ export async function updateProject(
   updates: Partial<Pick<Project, "status" | "input_images" | "output_image" | "prompt_used">>
 ): Promise<void> {
   await admin().from("projects").update(updates).eq("id", id);
+}
+
+export async function listProjectsByCollection(collectionId: string): Promise<ProjectWithUrls[]> {
+  const workspace = await getEffectiveWorkspace();
+  const { data, error } = await admin()
+    .from("projects")
+    .select("*")
+    .eq("workspace_id", workspace.id)
+    .eq("collection_id", collectionId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return Promise.all((data as Project[]).map(enrichProject));
 }
 
 export async function deleteProject(id: string): Promise<void> {

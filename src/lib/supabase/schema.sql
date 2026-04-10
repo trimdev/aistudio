@@ -139,6 +139,35 @@ create policy "chat_insert" on chat_messages
   );
 
 -- -----------------------------------------------
+-- PROJECT COLLECTIONS (user-facing "projects" that contain multiple shots)
+-- -----------------------------------------------
+create table if not exists project_collections (
+  id           uuid primary key default uuid_generate_v4(),
+  workspace_id uuid not null references workspaces(id) on delete cascade,
+  name         text not null,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
+);
+
+alter table project_collections enable row level security;
+
+create policy "collection_select" on project_collections
+  for select using (workspace_id in (select id from workspaces where user_id = auth.uid()));
+create policy "collection_insert" on project_collections
+  for insert with check (workspace_id in (select id from workspaces where user_id = auth.uid()));
+create policy "collection_update" on project_collections
+  for update using (workspace_id in (select id from workspaces where user_id = auth.uid()));
+create policy "collection_delete" on project_collections
+  for delete using (workspace_id in (select id from workspaces where user_id = auth.uid()));
+
+-- Add collection_id to projects (run as migration)
+-- ALTER TABLE projects ADD COLUMN IF NOT EXISTS collection_id uuid references project_collections(id) on delete set null;
+
+create trigger collection_updated_at
+  before update on project_collections
+  for each row execute procedure set_updated_at();
+
+-- -----------------------------------------------
 -- WORKSPACE MEMORIES (persistent refinement preferences)
 -- -----------------------------------------------
 create table if not exists workspace_memories (

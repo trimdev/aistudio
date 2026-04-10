@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { UploadPanel } from "./UploadPanel";
 import { PreviewPanel } from "./PreviewPanel";
@@ -38,7 +39,8 @@ function revokePreviews(prev: UploadedPreviews) {
   if (prev.side) URL.revokeObjectURL(prev.side);
 }
 
-export function GhostStudioTool() {
+export function GhostStudioTool({ collectionId }: { collectionId?: string | null }) {
+  const router = useRouter();
   const [images, setImages] = useState<UploadedImages>({ front: null, back: null, side: null });
   const [previews, setPreviews] = useState<UploadedPreviews>({ front: null, back: null, side: null });
   const [projectName, setProjectName] = useState("");
@@ -126,6 +128,7 @@ export function GhostStudioTool() {
     if (images.side) formData.append("side", images.side);
     formData.append("projectName", name);
     if (refinePrompt.trim()) formData.append("refinePrompt", refinePrompt.trim());
+    if (collectionId) formData.append("collectionId", collectionId);
 
     try {
       const res = await fetch("/api/generate", { method: "POST", body: formData });

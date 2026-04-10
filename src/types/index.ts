@@ -21,9 +21,25 @@ export interface Workspace {
   updated_at: string;
 }
 
+export interface ProjectCollection {
+  id: string;
+  workspace_id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectCollectionWithMeta extends ProjectCollection {
+  photoCount: number;
+  completedCount: number;
+  thumbnailUrl: string | null;
+  lastActivity: string;
+}
+
 export interface Project {
   id: string;
   workspace_id: string;
+  collection_id: string | null;
   name: string;
   status: "pending" | "processing" | "completed" | "failed";
   input_images: string[];
