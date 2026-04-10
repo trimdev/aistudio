@@ -8,9 +8,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Users, Zap, TrendingUp, Image, ArrowRight,
-  FolderOpen, Clock, Activity, LogIn, Ghost, Sofa,
+  FolderOpen, Clock, Activity, LogIn, Ghost, Sofa, DollarSign,
 } from "lucide-react";
 import { enterWorkspace } from "./actions";
+import { MiniTrendChart } from "./_components/MiniTrendChart";
 
 interface WorkspaceRow {
   id: string;
@@ -18,6 +19,7 @@ interface WorkspaceRow {
   user_id: string;
   role: string;
   modules: string[] | null;
+  gemini_api_key?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -70,6 +72,16 @@ function avatarColor(email: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
+function formatCostGlobal(usd: number): string {
+  if (usd < 0.01) return "< $0.01";
+  return `$${usd.toFixed(2)}`;
+}
+
+function formatCostWorkspace(usd: number): string {
+  if (usd < 0.001) return "< $0.001";
+  return `$${usd.toFixed(3)}`;
+}
+
 export default async function AdminPage() {
   const user = await getServerUser();
   if (!user) redirect("/login");
@@ -82,11 +94,11 @@ export default async function AdminPage() {
   const [workspacesRes, projectsRes, collectionsRes, usersRes] = await Promise.all([
     supabase
       .from("workspaces")
-      .select("id, name, user_id, role, modules, created_at, updated_at")
+      .select("id, name, user_id, role, modules, gemini_api_key, created_at, updated_at")
       .order("created_at", { ascending: false }),
     supabase
       .from("projects")
-      .select("id, workspace_id, status, updated_at, output_image")
+      .select("id, workspace_id, status, updated_at, output_image, prompt_used, input_tokens, output_tokens")
       .order("updated_at", { ascending: false }),
     supabase
       .from("project_collections")
@@ -95,10 +107,24 @@ export default async function AdminPage() {
   ]);
 
   const allWorkspaces  = (workspacesRes.data   ?? []) as WorkspaceRow[];
-  const allProjects    = (projectsRes.data      ?? []) as { id: string; workspace_id: string; status: string; updated_at: string; output_image: string | null }[];
+  const allProjects    = (projectsRes.data      ?? []) as {
+    id: string;
+    workspace_id: string;
+    status: string;
+    updated_at: string;
+    output_image: string | null;
+    prompt_used: string | null;
+    input_tokens: number | null;
+    output_tokens: number | null;
+  }[];
   const allCollections = (collectionsRes.data   ?? []) as { id: string; workspace_id: string }[];
   const authUsers      = usersRes.data?.users   ?? [];
   const userMap        = new Map(authUsers.map((u) => [u.id, u.email ?? "—"]));
+
+  // Build lastLoginMap from auth users
+  const lastLoginMap = new Map<string, string | null>(
+    authUsers.map((u) => [u.id, u.last_sign_in_at ?? null])
+  );
 
   const now        = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
@@ -112,6 +138,16 @@ export default async function AdminPage() {
     monthGenerations: completed.filter((p) => p.updated_at >= monthStart).length,
   };
 
+  // 7-day trend data
+  const trendDays = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(now);
+    d.setDate(d.getDate() - (6 - i));
+    const iso = d.toISOString().slice(0, 10); // "YYYY-MM-DD"
+    const label = `${d.getMonth() + 1}/${d.getDate()}`;
+    const count = completed.filter((p) => p.updated_at.slice(0, 10) === iso).length;
+    return { label, count };
+  });
+
   const clients = allWorkspaces.filter((ws) => ws.role !== "admin").map((ws) => {
     const wsCollections = allCollections.filter((c) => c.workspace_id === ws.id);
     const wsCompleted   = allProjects.filter((p) => p.workspace_id === ws.id && p.status === "completed");
@@ -120,6 +156,24 @@ export default async function AdminPage() {
     const lastProject   = allProjects.filter((p) => p.workspace_id === ws.id)[0];
     const lastActivity  = lastProject?.updated_at ?? ws.updated_at;
     const recentOutput  = wsCompleted[0]?.output_image ?? null;
+
+    // Per-workspace computed fields
+    const wsFailed = allProjects.filter((p) => p.workspace_id === ws.id && p.status === "failed").length;
+    const errorDenom = wsFailed + wsCompleted.length;
+    const errorRate = errorDenom > 0 ? Math.round((wsFailed / errorDenom) * 100) : 0;
+
+    const rawCost = wsCompleted.reduce((sum, p) => {
+      return sum + (p.input_tokens ?? 0) * 0.075 / 1_000_000 + (p.output_tokens ?? 0) * 0.30 / 1_000_000;
+    }, 0);
+    const costUsd = formatCostWorkspace(rawCost);
+
+    const ghostCount = wsCompleted.filter((p) => p.prompt_used !== null && !p.prompt_used.startsWith("model-")).length;
+    const modelCount = wsCompleted.filter((p) => p.prompt_used !== null && p.prompt_used.startsWith("model-")).length;
+
+    const hasOwnKey = !!(ws as WorkspaceRow).gemini_api_key;
+    const lastLogin = lastLoginMap.get(ws.user_id) ?? null;
+    const activeToday = wsToday > 0;
+
     return {
       ...ws,
       email:          userMap.get(ws.user_id) ?? "—",
@@ -129,8 +183,23 @@ export default async function AdminPage() {
       monthCount:     wsMonth,
       lastActivity,
       recentOutput,
+      errorRate,
+      costUsd,
+      ghostCount,
+      modelCount,
+      hasOwnKey,
+      lastLogin,
+      activeToday,
     };
   });
+
+  // Total API cost across all workspaces
+  const totalCostRaw = allProjects
+    .filter((p) => p.status === "completed")
+    .reduce((sum, p) => {
+      return sum + (p.input_tokens ?? 0) * 0.075 / 1_000_000 + (p.output_tokens ?? 0) * 0.30 / 1_000_000;
+    }, 0);
+  const totalCostFormatted = formatCostGlobal(totalCostRaw);
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
@@ -152,7 +221,7 @@ export default async function AdminPage() {
       </div>
 
       {/* ── Stats row ──────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-10">
         {[
           { icon: Users,       label: "Ügyfelek",         value: stats.workspaces,        accent: "bg-blue-50 text-blue-600" },
           { icon: Image,       label: "Összes generálás",  value: stats.totalGenerations,  accent: "bg-emerald-50 text-emerald-600" },
@@ -167,6 +236,20 @@ export default async function AdminPage() {
             <p className="text-xs text-gray-500 mt-0.5">{label}</p>
           </Card>
         ))}
+        {/* 5th card: total API cost */}
+        <Card className="p-5 border-gray-100 shadow-none">
+          <div className="w-9 h-9 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center mb-3">
+            <DollarSign className="w-4 h-4" />
+          </div>
+          <p className="text-3xl font-bold text-gray-900">{totalCostFormatted}</p>
+          <p className="text-xs text-gray-500 mt-0.5">API költség</p>
+        </Card>
+      </div>
+
+      {/* ── 7-day trend chart ───────────────────────────────────────────── */}
+      <div className="mb-10">
+        <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-3">7 napos generálási trend</h2>
+        <MiniTrendChart days={trendDays} />
       </div>
 
       {/* ── Client workspace cards ──────────────────────────────────────── */}
@@ -192,8 +275,14 @@ export default async function AdminPage() {
               <div className="p-5">
                 {/* Avatar + identity */}
                 <div className="flex items-start gap-3 mb-4">
-                  <div className={`w-10 h-10 rounded-xl ${avatarColor(client.email)} flex items-center justify-center text-white text-sm font-bold shrink-0`}>
-                    {getInitials(client.email)}
+                  {/* Avatar with active-today green dot */}
+                  <div className="relative shrink-0">
+                    <div className={`w-10 h-10 rounded-xl ${avatarColor(client.email)} flex items-center justify-center text-white text-sm font-bold`}>
+                      {getInitials(client.email)}
+                    </div>
+                    {client.activeToday && (
+                      <div className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-green-400 border-2 border-white" />
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-gray-900 text-sm truncate">{client.email}</p>
@@ -202,6 +291,11 @@ export default async function AdminPage() {
                   <Badge className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border-0 shrink-0 ${client.role === "admin" ? "bg-violet-100 text-violet-700" : "bg-gray-100 text-gray-500"}`}>
                     {client.role}
                   </Badge>
+                  {client.hasOwnKey && (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 shrink-0">
+                      own key
+                    </span>
+                  )}
                 </div>
 
                 {/* Active modules */}
@@ -221,10 +315,33 @@ export default async function AdminPage() {
                   ))}
                 </div>
 
-                {/* Last activity */}
-                <div className="flex items-center gap-1.5 text-[11px] text-gray-400 mb-4">
-                  <Clock className="w-3 h-3" />
-                  <span>Utolsó: {formatHuDateTime(client.lastActivity)}</span>
+                {/* Ghost/Model split + cost + error rate */}
+                <div className="flex items-center gap-2 flex-wrap mb-3">
+                  <span className="text-[11px] text-gray-500 bg-gray-50 px-2 py-0.5 rounded-full">
+                    {client.ghostCount} ghost · {client.modelCount} modell
+                  </span>
+                  <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
+                    {client.costUsd}
+                  </span>
+                  {client.errorRate > 0 && (
+                    <span className="text-[11px] font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
+                      {client.errorRate}% hiba
+                    </span>
+                  )}
+                </div>
+
+                {/* Last generation + last login */}
+                <div className="flex flex-col gap-1 mb-4">
+                  <div className="flex items-center gap-1.5 text-[11px] text-gray-400">
+                    <Clock className="w-3 h-3" />
+                    <span>Generálás: {formatHuDateTime(client.lastActivity)}</span>
+                  </div>
+                  {client.lastLogin && (
+                    <div className="flex items-center gap-1.5 text-[11px] text-gray-400">
+                      <LogIn className="w-3 h-3" />
+                      <span>Login: {formatHuDateTime(client.lastLogin)}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Actions */}
