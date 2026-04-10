@@ -284,27 +284,45 @@ User's refinement request: ${feedback.trim()}`;
 // ─── Model photo — single-image prompts ──────────────────────────────────────
 
 const SINGLE_PHOTO_BASE = (hairColor: string, hairDesc: string) =>
-  `A professional high-end fashion editorial photograph of a young ${hairColor} Caucasian female model \
-wearing the exact garment shown in the reference image.
+  `Generate a professional high-end fashion editorial photograph.
 
-Generate ONE single standalone photograph — NOT a collage, NOT a triptych, NOT a grid. \
-One image, one pose, one scene.
+OUTPUT: ONE single standalone photograph — NOT a collage, NOT a triptych, NOT a grid. One image, one pose, one scene.
 
-GARMENT ACCURACY — ABSOLUTE REQUIREMENT:
-The model MUST wear EXACTLY the garment shown in the reference image(s). This is the most critical requirement.
-- The garment in this photo must be PIXEL-PERFECT identical to the reference: same style, cut, color, fabric, collar, buttons, zipper, pockets, pattern, print, texture, stitching — every single detail.
-- Do NOT substitute, simplify, reinterpret, or change ANY aspect of the garment. Even subtle differences are unacceptable.
-- Reproduce the EXACT hue, saturation, brightness, and fabric sheen. No color grading or stylization.
-- If unsure about any garment detail, refer back to the reference image — never improvise.
-- This garment consistency requirement overrides all other creative decisions.
+══════════════════════════════════════════════════
+GARMENT — MANDATORY COPY TASK (highest priority):
+══════════════════════════════════════════════════
+The uploaded photo(s) show the ACTUAL PHYSICAL GARMENT that must appear in this photo.
+This is NOT a creative brief. You are NOT asked to imagine, design, or interpret a garment.
+You must COPY the uploaded garment onto the model with 100% accuracy.
+
+COPY THESE EXACT ATTRIBUTES from the uploaded photo(s):
+  • Garment TYPE and LENGTH (e.g. short puffer jacket, NOT a long coat)
+  • Silhouette and fit (cropped, oversized, fitted, etc.)
+  • Color — exact hue, saturation, brightness (do NOT darken, shift, or reinterpret)
+  • Fabric texture and sheen (matte, glossy, quilted, etc.)
+  • All hardware: zipper style, button placement, buckles, snap count
+  • Collar type (e.g. standing collar, fur collar, hood, lapel — copy EXACTLY)
+  • Pocket placement, shape, and count
+  • Pattern / print / stitching lines (e.g. diagonal quilt pattern)
+  • Sleeve length, cuff style, and any trim
+  • Hem shape and length
+
+PROHIBITED — do NOT do any of these:
+  ✗ Do NOT substitute a different garment style (e.g. replacing a puffer with a coat)
+  ✗ Do NOT add fur collar if the uploaded garment has none
+  ✗ Do NOT change the length (short jacket must stay short)
+  ✗ Do NOT reinterpret or "upgrade" the garment
+  ✗ Do NOT use your training knowledge of what "similar" garments look like
+  ✗ Do NOT apply any stylistic interpretation
+  If you cannot see a detail clearly in the uploaded image, leave it as-is — never improvise
 
 MODEL APPEARANCE:
-The model has ${hairDesc}, light skin tone, natural makeup, pleasant neutral expression. \
-Full body shot, head to toe. Arms slightly away from the body so the garment silhouette is fully visible.
+Young ${hairColor} Caucasian female model. ${hairDesc}. Light skin tone, natural makeup, neutral expression.
+Full body shot, head to toe. Arms slightly away from body so garment silhouette is fully visible.
 
 TECHNICAL:
-Photorealistic, high resolution, sharp focus on the garment. \
-Commercial fashion editorial style. Medium format camera, 85mm equivalent focal length.`;
+Photorealistic. High resolution. Sharp focus on the garment. Commercial fashion editorial style.
+Medium format camera, 85mm focal length.`;
 
 export const BLONDE_SINGLE_PROMPT  = SINGLE_PHOTO_BASE("blonde",   "straight or wavy blonde hair, shoulder length or longer");
 export const BRUNETTE_SINGLE_PROMPT = SINGLE_PHOTO_BASE("brunette", "straight or wavy dark brown hair, shoulder length or longer");
@@ -349,7 +367,7 @@ function buildSinglePhotoPrompt(
 
   return `${base}
 
-IMPORTANT: The reference image(s) above show the EXACT garment the model must wear. Do not change the garment in any way.
+REMINDER: The garment in the uploaded image(s) is the ACTUAL PRODUCT. Copy it exactly — do not substitute, stylize, or lengthen it. The model wears THIS garment and no other.
 
 POSE / SCENE (this specific photo):
 ${pose}${kwLine}`;
@@ -410,8 +428,8 @@ export async function generateModelPhoto(
   const prompt = buildSinglePhotoPrompt(variant, sceneType, poseIndex, keywords);
 
   const refInstruction = modelRefBuffer
-    ? `\n\nMODEL APPEARANCE REFERENCE: The FIRST image is a reference photo of the desired model appearance. Match this person's face structure, hair color, and hair style closely.\n\nGARMENT REFERENCE: The REMAINING image(s) show the EXACT garment that must be worn. Every detail of this garment is mandatory.`
-    : `\n\nGARMENT REFERENCE: The image(s) above show the EXACT garment that must be worn in this photo. Reproduce every detail faithfully.`;
+    ? `\n\nIMAGE ROLES:\n- Image 1 (first): Model appearance reference — match face structure, hair color, and style.\n- Images 2+ (remaining): THE ACTUAL GARMENT to copy onto the model. These images show the PHYSICAL PRODUCT. The model must wear THIS EXACT GARMENT — same type, length, color, collar, quilting, hardware, and all details. Do not swap it for any other garment.`
+    : `\n\nGARMENT IMAGES: The uploaded image(s) show the PHYSICAL GARMENT the model must wear. Copy it exactly — same type, length, color, collar, quilting, hardware, and all visible details. Do not replace it with a different or "similar" garment.`;
 
   const extraLine = extraPrompt?.trim()
     ? `\n\nAdditional instructions for this specific photo: ${extraPrompt.trim()}`

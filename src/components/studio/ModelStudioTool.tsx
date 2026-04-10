@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useEffect, KeyboardEvent, Dispatch, SetS
 import { toast } from "sonner";
 import {
   Wand2, RotateCcw, Loader2, Download, ImageOff,
-  X, Plus, Camera, Trees, Cpu, Shuffle,
+  X, Plus, Camera, Trees, Cpu, Shuffle, Square,
 } from "lucide-react";
 
 // Ghost photo shape returned by /api/projects
@@ -514,6 +514,11 @@ export function ModelStudioTool({ collectionId }: ModelStudioToolProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [images, sceneType, activeChips, customKeywords, selectedGhostId, collectionId]);
 
+  const handleStop = () => {
+    abortRef.current = true;
+    setIsRunning(false);
+  };
+
   const handleReset = () => {
     abortRef.current = true;
     setIsRunning(false);
@@ -838,18 +843,23 @@ export function ModelStudioTool({ collectionId }: ModelStudioToolProps) {
             </Button>
           )}
 
-          <Button onClick={handleGenerate} disabled={!canGenerate}
-            className={cn(
-              "w-full h-12 gap-2 font-bold text-sm transition-all duration-200",
-              canGenerate && !isRunning ? "bg-violet-600 text-white hover:bg-violet-700 shadow-sm"
-                : isRunning            ? "bg-violet-600 text-white opacity-80"
-                :                        "bg-gray-200 text-gray-400 cursor-not-allowed"
-            )}>
-            {isRunning
-              ? <><Loader2 className="w-4 h-4 animate-spin" />{t("mod_generating")}</>
-              : <><Wand2   className="w-4 h-4" />{t("mod_generate")}</>
-            }
-          </Button>
+          {isRunning ? (
+            <Button
+              onClick={handleStop}
+              className="w-full h-12 gap-2 font-bold text-sm bg-red-600 hover:bg-red-700 text-white transition-all duration-200"
+            >
+              <Square className="w-4 h-4" /> Leállítás
+            </Button>
+          ) : (
+            <Button onClick={handleGenerate} disabled={!canGenerate}
+              className={cn(
+                "w-full h-12 gap-2 font-bold text-sm transition-all duration-200",
+                canGenerate ? "bg-violet-600 text-white hover:bg-violet-700 shadow-sm"
+                            : "bg-gray-200 text-gray-400 cursor-not-allowed"
+              )}>
+              <Wand2 className="w-4 h-4" />{t("mod_generate")}
+            </Button>
+          )}
 
           {!canGenerate && !isRunning && (
             <p className="text-xs text-center text-gray-400">{t("mod_need_photos")}</p>
