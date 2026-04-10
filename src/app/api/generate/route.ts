@@ -1,17 +1,19 @@
-import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import { generateGhostMannequin, MODEL_INFO } from "@/lib/ai/gemini";
 import { getWorkspace } from "@/lib/workspace";
 import { createProject, updateProject } from "@/lib/projects";
-import { uploadInputImage, uploadOutputImage, getSignedUrl } from "@/lib/storage";
+import { uploadOutputImage, getSignedUrl } from "@/lib/storage";
+import { createVersion } from "@/lib/versions";
+import { getServerUser } from "@/lib/supabase/server";
+import { listWorkspaceMemories } from "@/lib/workspace-memory";
+import { buildMemoryPromptBlock } from "@/lib/memory-utils";
 
-// Allow up to 5 minutes for Gemini image generation
 export const maxDuration = 300;
 
-// ─── Rate limiting (replace with Upstash Redis in production) ────────────────
+// ─── Rate limiting ────────────────────────────────────────────────────────────
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT = 20;
-const RATE_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+const RATE_WINDOW_MS = 60 * 60 * 1000;
 
 function checkRateLimit(userId: string): { allowed: boolean; remaining: number } {
   const now = Date.now();
@@ -25,16 +27,16 @@ function checkRateLimit(userId: string): { allowed: boolean; remaining: number }
   return { allowed: true, remaining: RATE_LIMIT - entry.count };
 }
 
-// ─── Handler ─────────────────────────────────────────────────────────────────
+// ─── Handler ──────────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
-  const { userId } = await auth();
-  if (!userId) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const user = await getServerUser();
+  if (!user) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
 
-  const { allowed, remaining } = checkRateLimit(userId);
+  const { allowed, remaining } = checkRateLimit(user.id);
   if (!allowed) {
     return NextResponse.json(
       { error: "Rate limit exceeded. Up to 20 generations per hour." },
-      { status: 429, headers: { "X-RateLimit-Remaining": "0" } }
+      { status: 429 }
     );
   }
 
@@ -45,12 +47,8 @@ export async function POST(req: NextRequest) {
   const projectName = (formData.get("projectName") as string) || "Ghost Mannequin Shot";
   const refinePrompt = (formData.get("refinePrompt") as string) || undefined;
 
-  // Validate required images
   if (!frontFile || !backFile) {
-    return NextResponse.json(
-      { error: "Front and back images are required." },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Front and back images are required." }, { status: 400 });
   }
 
   const allFiles = [frontFile, backFile, ...(sideFile ? [sideFile] : [])];
@@ -64,11 +62,13 @@ export async function POST(req: NextRequest) {
       );
     }
     if (file.size > 10 * 1024 * 1024) {
-      return NextResponse.json(
-        { error: `${file.name} exceeds 10 MB limit.` },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: `${file.name} exceeds 10 MB.` }, { status: 400 });
     }
+  }
+
+  function normalizeMime(type: string): string {
+    // Gemini API requires image/jpeg — image/jpg is non-standard and will fail pattern validation
+    return type === "image/jpg" ? "image/jpeg" : type;
   }
 
   const workspace = await getWorkspace();
@@ -77,43 +77,43 @@ export async function POST(req: NextRequest) {
   try {
     await updateProject(project.id, { status: "processing" });
 
-    // ── Upload inputs ────────────────────────────────────────────────────────
+    // Upload inputs
     const buffers: Buffer[] = [];
     const mimeTypes: string[] = [];
-    const storagePaths: string[] = [];
 
     for (const file of allFiles) {
-      const ab = await file.arrayBuffer();
-      const buf = Buffer.from(ab);
-      const ext = file.type.replace("image/", "").replace("jpeg", "jpg");
-      const fileName = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-      const path = await uploadInputImage(buf, fileName, file.type, project.id);
+      const buf = Buffer.from(await file.arrayBuffer());
+      const mime = normalizeMime(file.type);
       buffers.push(buf);
-      mimeTypes.push(file.type);
-      storagePaths.push(path);
+      mimeTypes.push(mime);
     }
 
-    await updateProject(project.id, { input_images: storagePaths });
+    await updateProject(project.id, { input_images: [] });
 
-    // ── Generate image via Gemini ─────────────────────────────────────────────
+    // Load workspace memories and build prompt
+    const memories = workspace ? await listWorkspaceMemories(workspace.id) : [];
+    const memoryBlock = buildMemoryPromptBlock(memories);
+    const effectiveRefinePrompt = memoryBlock
+      ? (refinePrompt ? `${refinePrompt}\n${memoryBlock}` : memoryBlock.trim())
+      : refinePrompt;
+
+    // Generate image
     const { imageBuffer, mimeType } = await generateGhostMannequin(
       buffers,
       mimeTypes,
       workspace?.gemini_api_key,
-      refinePrompt
+      effectiveRefinePrompt
     );
 
-    // ── Upload output ────────────────────────────────────────────────────────
+    // Upload output
     const ext = mimeType.replace("image/", "");
-    const outputFileName = `ghost_${Date.now()}.${ext}`;
     const outputPath = await uploadOutputImage(
       imageBuffer,
-      outputFileName,
+      `ghost_${Date.now()}.${ext}`,
       mimeType,
       project.id
     );
 
-    // Create signed URL (24 h)
     const outputUrl = await getSignedUrl("ghost-outputs", outputPath, 86400);
 
     await updateProject(project.id, {
@@ -122,20 +122,22 @@ export async function POST(req: NextRequest) {
       prompt_used: MODEL_INFO.id,
     });
 
-    return NextResponse.json(
-      {
-        projectId: project.id,
-        outputUrl,
-        outputPath,
-        mimeType,
-        rateLimitRemaining: remaining,
-      },
-      { headers: { "X-RateLimit-Remaining": String(remaining) } }
+    // Log the initial version
+    const version = await createVersion(
+      project.id,
+      outputPath,
+      "Initial generation",
+      undefined,
+      "ai"
     );
+
+    return NextResponse.json({ projectId: project.id, outputUrl, outputPath, mimeType, versionNumber: version.version_number, rateLimitRemaining: remaining });
   } catch (err: unknown) {
     await updateProject(project.id, { status: "failed" });
     console.error("[generate]", err);
-    const message = err instanceof Error ? err.message : "Generation failed";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Generation failed" },
+      { status: 500 }
+    );
   }
 }

@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
+import { useLanguage } from "@/components/providers/LanguageProvider";
 
 interface Settings {
   workspaceId: string;
@@ -17,6 +18,7 @@ interface Settings {
 }
 
 export default function SettingsPage() {
+  const { t } = useLanguage();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [workspaceName, setWorkspaceName] = useState("");
   const [geminiApiKey, setGeminiApiKey] = useState("");
@@ -45,11 +47,11 @@ export default function SettingsPage() {
       });
 
       if (!res.ok) throw new Error("Save failed");
-      toast.success("Settings saved");
+      toast.success(t("settings_saved"));
       setSettings((s) => s ? { ...s, workspaceName, hasCustomApiKey: !!geminiApiKey } : s);
       setGeminiApiKey("");
     } catch {
-      toast.error("Failed to save settings");
+      toast.error("Mentés sikertelen");
     } finally {
       setSaving(false);
     }
@@ -66,70 +68,62 @@ export default function SettingsPage() {
   return (
     <div className="p-8 max-w-2xl mx-auto">
       <div className="mb-8">
-        <h1 className="text-2xl font-semibold text-gray-900">Settings</h1>
-        <p className="text-sm text-gray-500 mt-1">Manage your workspace and API configuration.</p>
+        <h1 className="text-2xl font-semibold text-gray-900">{t("settings_title")}</h1>
+        <p className="text-sm text-gray-500 mt-1">Kezeld a munkaterületed és az API konfigurációdat.</p>
       </div>
 
-      {/* Workspace */}
       <Card className="border-gray-100 shadow-none p-6 mb-4">
-        <h2 className="font-semibold text-gray-900 mb-1">Workspace</h2>
-        <p className="text-xs text-gray-500 mb-5">Your personal isolated workspace.</p>
+        <h2 className="font-semibold text-gray-900 mb-1">Munkaterület</h2>
+        <p className="text-xs text-gray-500 mb-5">A személyes izolált munkaterületed.</p>
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label className="text-sm font-medium text-gray-700">Workspace name</Label>
+            <Label className="text-sm font-medium text-gray-700">{t("settings_name")}</Label>
             <Input
               value={workspaceName}
               onChange={(e) => setWorkspaceName(e.target.value)}
               className="border-gray-200"
-              placeholder="My Workspace"
+              placeholder={t("settings_name_ph")}
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-sm font-medium text-gray-700">Workspace ID</Label>
-            <div className="flex items-center gap-2">
-              <Input
-                value={settings.workspaceId}
-                readOnly
-                className="border-gray-200 text-gray-400 font-mono text-xs"
-              />
-            </div>
+            <Label className="text-sm font-medium text-gray-700">{t("settings_id")}</Label>
+            <Input
+              value={settings.workspaceId}
+              readOnly
+              className="border-gray-200 text-gray-400 font-mono text-xs"
+            />
           </div>
         </div>
       </Card>
 
-      {/* API Keys */}
       <Card className="border-gray-100 shadow-none p-6 mb-6">
         <div className="flex items-center gap-2 mb-1">
           <Key className="w-4 h-4 text-gray-600" />
-          <h2 className="font-semibold text-gray-900">AI API Key</h2>
+          <h2 className="font-semibold text-gray-900">{t("settings_api_key")}</h2>
         </div>
-        <p className="text-xs text-gray-500 mb-5">
-          We provide a default Gemini key. Optionally supply your own for higher limits.
-        </p>
+        <p className="text-xs text-gray-500 mb-5">{t("settings_api_key_desc")}</p>
 
         <div className="space-y-4">
           <div className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 border border-gray-100">
             <Info className="w-4 h-4 text-gray-400 shrink-0" />
             <p className="text-xs text-gray-600">
               {settings.hasCustomApiKey
-                ? "You have a custom Gemini key configured. Clear the field below and save to remove it."
-                : "Using the GhostStudio shared Gemini key (rate limited). Add your own for unlimited access."}
+                ? "Saját API kulcsod van beállítva. Töröld az alábbi mezőt, és ments a kulcs eltávolításához."
+                : "A GhostStudio megosztott kulcsát használja (korlátozott). Add meg a sajátod a korlátlan hozzáféréshez."}
             </p>
-            <Badge
-              className={`ml-auto shrink-0 text-[11px] px-2 border-0 ${settings.hasCustomApiKey ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}
-            >
-              {settings.hasCustomApiKey ? "Custom key" : "Shared key"}
+            <Badge className={`ml-auto shrink-0 text-[11px] px-2 border-0 ${settings.hasCustomApiKey ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
+              {settings.hasCustomApiKey ? t("settings_using_custom") : t("settings_using_shared")}
             </Badge>
           </div>
 
           <div className="space-y-1.5">
             <Label className="text-sm font-medium text-gray-700">
-              Gemini API key {!settings.hasCustomApiKey && <span className="font-normal text-gray-400">(optional)</span>}
+              {t("settings_api_key")} {!settings.hasCustomApiKey && <span className="font-normal text-gray-400">({t("up_optional").toLowerCase()})</span>}
             </Label>
             <div className="relative">
               <Input
                 type={showKey ? "text" : "password"}
-                placeholder={settings.hasCustomApiKey ? "••••••••••••••••" : "AIza..."}
+                placeholder={settings.hasCustomApiKey ? "••••••••••••••••" : t("settings_api_key_ph")}
                 value={geminiApiKey}
                 onChange={(e) => setGeminiApiKey(e.target.value)}
                 className="border-gray-200 pr-10 font-mono text-sm"
@@ -142,9 +136,7 @@ export default function SettingsPage() {
                 {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
-            <p className="text-xs text-gray-400">
-              Your key is encrypted at rest and never exposed in the browser.
-            </p>
+            <p className="text-xs text-gray-400">A kulcsod titkosítva tárolódik és soha nem kerül a böngészőbe.</p>
           </div>
         </div>
       </Card>
@@ -157,7 +149,7 @@ export default function SettingsPage() {
         className="bg-gray-900 text-white hover:bg-gray-700 gap-2"
       >
         {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-        Save changes
+        {saving ? t("settings_saving") : t("settings_save")}
       </Button>
     </div>
   );

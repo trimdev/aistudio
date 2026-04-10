@@ -52,27 +52,8 @@ export default async function ProjectsPage() {
               className="border-gray-100 shadow-none hover:border-gray-200 transition-colors overflow-hidden"
             >
               <div className="flex gap-4 p-4">
-                {/* Input thumbnails */}
-                <div className="flex gap-1.5 shrink-0">
-                  {project.input_image_urls.slice(0, 3).map((url, i) => (
-                    <div
-                      key={i}
-                      className="w-16 h-20 rounded-lg bg-gray-100 overflow-hidden"
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={url}
-                        alt={`Input ${i + 1}`}
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                  ))}
-                </div>
-
-                {/* Arrow + output */}
                 {project.output_image_url && (
                   <>
-                    <div className="flex items-center text-gray-300 text-xl font-light shrink-0">→</div>
                     <div className="w-20 h-24 rounded-lg bg-gray-50 border border-gray-100 overflow-hidden shrink-0">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
@@ -113,8 +94,8 @@ export default async function ProjectsPage() {
                       >
                         {project.status}
                       </Badge>
-                      {project.output_image_url && (
-                        <a href={project.output_image_url} download target="_blank" rel="noreferrer">
+                      {project.output_image_full_url && (
+                        <a href={project.output_image_full_url} download target="_blank" rel="noreferrer">
                           <Button variant="outline" size="sm" className="h-7 px-2">
                             <Download className="w-3.5 h-3.5" />
                           </Button>

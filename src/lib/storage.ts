@@ -1,7 +1,7 @@
 "use server";
 
 import { createSupabaseAdminClient } from "./supabase/server";
-import { auth } from "@clerk/nextjs/server";
+import { getServerUser } from "./supabase/server";
 
 const INPUT_BUCKET = "ghost-inputs";
 const OUTPUT_BUCKET = "ghost-outputs";
@@ -16,12 +16,10 @@ export async function uploadInputImage(
   mimeType: string,
   projectId: string
 ): Promise<string> {
-  const { userId } = await auth();
-  if (!userId) throw new Error("Unauthenticated");
+  const user = await getServerUser();
+  if (!user) throw new Error("Unauthenticated");
 
-  // Path: {userId}/{projectId}/{fileName}
-  const path = `${userId}/${projectId}/${fileName}`;
-
+  const path = `${user.id}/${projectId}/${fileName}`;
   const { error } = await adminStorage()
     .from(INPUT_BUCKET)
     .upload(path, file, { contentType: mimeType, upsert: true });
@@ -36,11 +34,10 @@ export async function uploadOutputImage(
   mimeType: string,
   projectId: string
 ): Promise<string> {
-  const { userId } = await auth();
-  if (!userId) throw new Error("Unauthenticated");
+  const user = await getServerUser();
+  if (!user) throw new Error("Unauthenticated");
 
-  const path = `${userId}/${projectId}/${fileName}`;
-
+  const path = `${user.id}/${projectId}/${fileName}`;
   const { error } = await adminStorage()
     .from(OUTPUT_BUCKET)
     .upload(path, file, { contentType: mimeType, upsert: true });
@@ -52,11 +49,22 @@ export async function uploadOutputImage(
 export async function getSignedUrl(
   bucket: string,
   path: string,
-  expiresIn = 3600
+  expiresIn = 3600,
+  options?: {
+    download?: string | boolean;
+    cacheNonce?: string;
+    transform?: {
+      width?: number;
+      height?: number;
+      resize?: "cover" | "contain" | "fill";
+      format?: "origin";
+      quality?: number;
+    };
+  }
 ): Promise<string> {
   const { data, error } = await adminStorage()
     .from(bucket)
-    .createSignedUrl(path, expiresIn);
+    .createSignedUrl(path, expiresIn, options);
   if (error) throw error;
   return data.signedUrl;
 }

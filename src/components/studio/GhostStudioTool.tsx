@@ -5,16 +5,16 @@ import { toast } from "sonner";
 import { UploadPanel } from "./UploadPanel";
 import { PreviewPanel } from "./PreviewPanel";
 import { SettingsPanel } from "./SettingsPanel";
+
 import type {
   UploadedImages,
   UploadedPreviews,
   GenerationStep,
   GenerationResult,
+  ProjectVersionWithUrl,
 } from "@/types";
 
 // ─── Step timing schedule ─────────────────────────────────────────────────────
-// Each entry: [step, delay-before-transitioning-to-it (ms)]
-// The last step ("finalizing") stays until the API resolves.
 const STEP_SCHEDULE: Array<[GenerationStep, number]> = [
   ["uploading", 0],
   ["analyzing", 2_500],
@@ -39,21 +39,17 @@ function revokePreviews(prev: UploadedPreviews) {
 }
 
 export function GhostStudioTool() {
-  const [images, setImages] = useState<UploadedImages>({
-    front: null,
-    back: null,
-    side: null,
-  });
-  const [previews, setPreviews] = useState<UploadedPreviews>({
-    front: null,
-    back: null,
-    side: null,
-  });
+  const [images, setImages] = useState<UploadedImages>({ front: null, back: null, side: null });
+  const [previews, setPreviews] = useState<UploadedPreviews>({ front: null, back: null, side: null });
   const [projectName, setProjectName] = useState("");
   const [refinePrompt, setRefinePrompt] = useState("");
   const [step, setStep] = useState<GenerationStep>("idle");
   const [result, setResult] = useState<GenerationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Version history state
+  const [versions, setVersions] = useState<ProjectVersionWithUrl[]>([]);
+  const [activeVersionIndex, setActiveVersionIndex] = useState(0);
 
   const stepTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
@@ -63,7 +59,6 @@ export function GhostStudioTool() {
       setImages((prev) => {
         const next = { ...prev, [key]: file };
         setPreviews((oldPreviews) => {
-          // Revoke old preview for this slot
           if (oldPreviews[key]) URL.revokeObjectURL(oldPreviews[key]!);
           return { ...oldPreviews, [key]: file ? URL.createObjectURL(file) : null };
         });
@@ -73,13 +68,27 @@ export function GhostStudioTool() {
     []
   );
 
-  // Cleanup previews on unmount
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       revokePreviews(previews);
       stepTimers.current.forEach(clearTimeout);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Fetch versions ──────────────────────────────────────────────────────────
+  const fetchVersions = useCallback(async (projectId: string) => {
+    try {
+      const res = await fetch(`/api/versions?projectId=${projectId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setVersions(data.versions ?? []);
+        setActiveVersionIndex((data.versions?.length ?? 1) - 1);
+      }
+    } catch {
+      // Non-fatal
+    }
   }, []);
 
   // ── Step animation ──────────────────────────────────────────────────────────
@@ -100,15 +109,16 @@ export function GhostStudioTool() {
   // ── Generate ────────────────────────────────────────────────────────────────
   const handleGenerate = useCallback(async () => {
     if (!images.front || !images.back) {
-      toast.error("Upload front and back photos first.");
+      toast.error("Az elöl és hátul fotók feltöltése szükséges.");
       return;
     }
 
     setResult(null);
     setError(null);
+    setVersions([]);
     startStepAnimation();
 
-    const name = projectName.trim() || `Ghost Shot ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+    const name = projectName.trim() || `Ghost Shot ${new Date().toLocaleDateString("hu-HU", { month: "long", day: "numeric" })}`;
 
     const formData = new FormData();
     formData.append("front", images.front);
@@ -121,66 +131,87 @@ export function GhostStudioTool() {
       const res = await fetch("/api/generate", { method: "POST", body: formData });
       const data = await res.json();
 
-      if (!res.ok) {
-        throw new Error(data.error || `Server error ${res.status}`);
-      }
+      if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
 
       stopStepAnimation();
       setStep("done");
-      setResult({
+      const newResult: GenerationResult = {
         outputUrl: data.outputUrl,
         outputPath: data.outputPath,
         projectId: data.projectId,
         mimeType: data.mimeType,
         generatedAt: new Date(),
-      });
-      toast.success("Ghost mannequin image generated!");
+        versionNumber: data.versionNumber,
+      };
+      setResult(newResult);
+
+      // Load versions
+      await fetchVersions(data.projectId);
+
+      toast.success("Szellemfigura kép elkészült!");
     } catch (err: unknown) {
       stopStepAnimation();
       setStep("error");
-      const msg = err instanceof Error ? err.message : "Generation failed";
+      const msg = err instanceof Error ? err.message : "Generálás sikertelen";
       setError(msg);
       toast.error(msg);
     }
-  }, [images, projectName, refinePrompt]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [images, projectName, refinePrompt, fetchVersions]);
 
-  // ── Regenerate (same images, same prompt) ───────────────────────────────────
+  // ── Regenerate ──────────────────────────────────────────────────────────────
   const handleRegenerate = useCallback(() => {
     setResult(null);
     setError(null);
     setStep("idle");
-    // Small tick so React re-renders the idle state, then trigger generation
+    setVersions([]);
     setTimeout(handleGenerate, 50);
   }, [handleGenerate]);
+
+  // ── Handle refined result ───────────────────────────────────────────────────
+  const handleRefined = useCallback(async (refinedResult: GenerationResult) => {
+    setResult(refinedResult);
+    if (result?.projectId) {
+      await fetchVersions(result.projectId);
+    }
+  }, [result, fetchVersions]);
+
 
   const isLoading = step !== "idle" && step !== "done" && step !== "error";
 
   return (
-    <div className="flex h-full min-h-0 overflow-hidden">
-      <UploadPanel
-        images={images}
-        previews={previews}
-        disabled={isLoading}
-        onImageChange={handleImageChange}
-      />
-      <PreviewPanel
-        images={images}
-        previews={previews}
-        step={step}
-        result={result}
-        error={error}
-      />
-      <SettingsPanel
-        images={images}
-        step={step}
-        result={result}
-        projectName={projectName}
-        refinePrompt={refinePrompt}
-        onProjectNameChange={setProjectName}
-        onRefinePromptChange={setRefinePrompt}
-        onGenerate={handleGenerate}
-        onRegenerate={handleRegenerate}
-      />
-    </div>
+    <>
+      <div className="flex h-full min-h-0 overflow-hidden">
+        <UploadPanel
+          images={images}
+          previews={previews}
+          disabled={isLoading}
+          onImageChange={handleImageChange}
+        />
+        <PreviewPanel
+          images={images}
+          previews={previews}
+          step={step}
+          result={result}
+          error={error}
+          versions={versions}
+          activeVersionIndex={activeVersionIndex}
+          onSelectVersion={setActiveVersionIndex}
+          onRefined={handleRefined}
+        />
+        <SettingsPanel
+          images={images}
+          step={step}
+          result={result}
+          projectName={projectName}
+          refinePrompt={refinePrompt}
+          onProjectNameChange={setProjectName}
+          onRefinePromptChange={setRefinePrompt}
+          onGenerate={handleGenerate}
+          onRegenerate={handleRegenerate}
+        />
+      </div>
+
+    </>
   );
 }

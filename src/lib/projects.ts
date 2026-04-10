@@ -1,38 +1,50 @@
 "use server";
 
-import { auth } from "@clerk/nextjs/server";
-import { createSupabaseAdminClient } from "./supabase/server";
-import { getOrCreateWorkspace } from "./workspace";
+import { getServerUser, createSupabaseAdminClient } from "./supabase/server";
+import { getEffectiveWorkspace } from "./workspace";
+import { getSignedUrl } from "./storage";
 import type { Project, ProjectWithUrls } from "@/types";
 
 const admin = () => createSupabaseAdminClient();
 
-function storagePath(path: string): string {
-  return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/sign/${path}`;
-}
-
-async function signUrl(bucket: string, path: string): Promise<string> {
-  const { data } = await admin()
-    .storage.from(bucket)
-    .createSignedUrl(path, 60 * 60); // 1 hour
-  return data?.signedUrl ?? "";
+async function signUrl(
+  bucket: string,
+  path: string,
+  variant: "full" | "thumb" = "full"
+): Promise<string> {
+  return getSignedUrl(
+    bucket,
+    path,
+    60 * 60,
+    variant === "thumb"
+      ? {
+        transform: {
+          width: 320,
+          height: 320,
+          resize: "contain",
+          quality: 72,
+        },
+      }
+      : undefined
+  );
 }
 
 async function enrichProject(project: Project): Promise<ProjectWithUrls> {
-  const input_image_urls = await Promise.all(
-    project.input_images.map((p) => signUrl("ghost-inputs", p))
-  );
+  const input_image_urls: string[] = [];
   const output_image_url = project.output_image
-    ? await signUrl("ghost-outputs", project.output_image)
+    ? await signUrl("ghost-outputs", project.output_image, "thumb")
     : null;
-  return { ...project, input_image_urls, output_image_url };
+  const output_image_full_url = project.output_image
+    ? await signUrl("ghost-outputs", project.output_image, "full")
+    : null;
+  return { ...project, input_image_urls, output_image_url, output_image_full_url };
 }
 
 export async function listProjects(): Promise<ProjectWithUrls[]> {
-  const { userId } = await auth();
-  if (!userId) return [];
+  const user = await getServerUser();
+  if (!user) return [];
 
-  const workspace = await getOrCreateWorkspace();
+  const workspace = await getEffectiveWorkspace();
 
   const { data, error } = await admin()
     .from("projects")
@@ -45,7 +57,7 @@ export async function listProjects(): Promise<ProjectWithUrls[]> {
 }
 
 export async function getProject(id: string): Promise<ProjectWithUrls | null> {
-  const workspace = await getOrCreateWorkspace();
+  const workspace = await getEffectiveWorkspace();
   const { data } = await admin()
     .from("projects")
     .select("*")
@@ -57,7 +69,7 @@ export async function getProject(id: string): Promise<ProjectWithUrls | null> {
 }
 
 export async function createProject(name: string): Promise<Project> {
-  const workspace = await getOrCreateWorkspace();
+  const workspace = await getEffectiveWorkspace();
   const { data, error } = await admin()
     .from("projects")
     .insert({ workspace_id: workspace.id, name, status: "pending" })
@@ -75,7 +87,7 @@ export async function updateProject(
 }
 
 export async function deleteProject(id: string): Promise<void> {
-  const workspace = await getOrCreateWorkspace();
+  const workspace = await getEffectiveWorkspace();
   await admin()
     .from("projects")
     .delete()

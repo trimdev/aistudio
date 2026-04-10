@@ -8,11 +8,15 @@ export type Json =
 
 // ── Database row types ────────────────────────────────────────────────────────
 
+export type WorkspaceModule = "fashion" | "furniture";
+
 export interface Workspace {
   id: string;
-  clerk_user_id: string;
+  user_id: string;
   name: string;
   gemini_api_key: string | null;
+  role: "user" | "admin";
+  modules: WorkspaceModule[];
   created_at: string;
   updated_at: string;
 }
@@ -33,6 +37,32 @@ export interface Project {
 export interface ProjectWithUrls extends Project {
   input_image_urls: string[];
   output_image_url: string | null;
+  output_image_full_url: string | null;
+}
+
+export interface ProjectVersion {
+  id: string;
+  project_id: string;
+  version_number: number;
+  output_image: string;
+  feedback: string | null;
+  created_by: "user" | "ai";
+  description: string;
+  created_at: string;
+}
+
+export interface ProjectVersionWithUrl extends ProjectVersion {
+  output_image_url: string;
+  output_image_thumb_url: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  workspace_id: string;
+  project_id: string | null;
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
 }
 
 // ── Ghost Studio Tool types ───────────────────────────────────────────────────
@@ -66,4 +96,5 @@ export interface GenerationResult {
   projectId: string;
   mimeType: string;
   generatedAt: Date;
+  versionNumber?: number;
 }
