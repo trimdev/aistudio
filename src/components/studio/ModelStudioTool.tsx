@@ -129,7 +129,7 @@ interface SlotCardProps {
 
 function SlotCard({ slot, index, label, onRegenerate, onRequestRegen }: SlotCardProps) {
   return (
-    <div className="flex flex-col bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm group/card">
+    <div className="flex flex-col bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm group">
       {/* Image area */}
       <div className="relative aspect-[3/4] bg-gray-50 flex items-center justify-center">
         {slot.state === "idle" && (
@@ -155,7 +155,7 @@ function SlotCard({ slot, index, label, onRegenerate, onRequestRegen }: SlotCard
               className="w-full h-full object-cover"
             />
             {/* Re-generate on hover */}
-            <div className="absolute inset-0 bg-black/0 group-hover/card:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover/card:opacity-100">
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
               <button
                 onClick={onRequestRegen}
                 className="flex items-center gap-1.5 bg-white/90 text-gray-800 text-[11px] font-bold px-3 py-1.5 rounded-full shadow hover:bg-white transition-colors"

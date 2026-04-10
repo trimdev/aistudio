@@ -428,7 +428,7 @@ export async function generateModelPhoto(
   const prompt = buildSinglePhotoPrompt(variant, sceneType, poseIndex, keywords);
 
   const refInstruction = modelRefBuffer
-    ? `\n\nIMAGE ROLES:\n- Image 1 (first): Model APPEARANCE reference only — match face structure, hair color, and hair style. CRITICAL: completely IGNORE any clothing or garment the person in this image is wearing. The clothing in Image 1 is irrelevant and must NOT influence what garment you generate.\n- Images 2+ (remaining): THE ACTUAL GARMENT to copy. These show the PHYSICAL PRODUCT the model must wear — same type, length, color, collar, quilting, hardware, and every detail. Do not swap it for any other garment under any circumstances.`
+    ? `\n\nIMAGE ROLES:\n- Images 1–${imageBuffers.length} (first): THE ACTUAL GARMENT to copy — these are the uploaded product photos. The model must wear this EXACT garment with 100% accuracy.\n- Last image: Model APPEARANCE reference — match face structure, hair color, and hair style ONLY. CRITICAL: completely IGNORE any clothing the person in this last image is wearing. That clothing is irrelevant and must NOT influence what garment you generate. The garment is defined ONLY by the first images.`
     : `\n\nGARMENT IMAGES: The uploaded image(s) show the PHYSICAL GARMENT the model must wear. Copy it exactly — same type, length, color, collar, quilting, hardware, and all visible details. Do not replace it with a different or "similar" garment.`;
 
   const extraLine = extraPrompt?.trim()
@@ -437,8 +437,9 @@ export async function generateModelPhoto(
 
   const fullPrompt = `${prompt}${refInstruction}${extraLine}`;
 
-  // Image order: [model reference (if any)] → [garment photos] → [text prompt]
-  const requestWithRef    = { contents: [{ role: "user", parts: [...refPart, ...garmentParts, { text: fullPrompt }] }] };
+  // Image order: [garment photos] → [model reference (if any)] → [text prompt]
+  // Garment comes FIRST so Gemini anchors to it; model ref comes LAST as supplementary appearance reference only
+  const requestWithRef    = { contents: [{ role: "user", parts: [...garmentParts, ...refPart, { text: fullPrompt }] }] };
   const requestWithoutRef = { contents: [{ role: "user", parts: [...garmentParts, { text: fullPrompt }] }] };
 
   const MAX_ATTEMPTS = 2;
