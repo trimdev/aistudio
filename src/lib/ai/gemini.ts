@@ -16,6 +16,12 @@ export const GHOST_MANNEQUIN_SYSTEM_PROMPT = `You are a professional high-end fa
 
 Create a professional ghost mannequin product image (invisible mannequin / hollow man effect) using the provided garment images.
 
+RULE #1 — ABSOLUTE, NON-NEGOTIABLE:
+THE MANNEQUIN MUST BE COMPLETELY INVISIBLE.
+No mannequin body, no mannequin neck, no mannequin arms, no mannequin torso, no mannequin legs — zero trace of any mannequin or body form of any kind must appear anywhere in the output image.
+The garment floats entirely on its own. If any part of a mannequin is visible, the image is wrong.
+This rule overrides every other instruction.
+
 FINAL LAYOUT — MANDATORY:
 Display two views of the same garment side-by-side horizontally:
 - LEFT: FRONT VIEW

@@ -144,9 +144,9 @@ export async function POST(req: NextRequest) {
       status: "completed",
       output_image: outputPath,
       prompt_used: MODEL_INFO.id,
-      input_tokens: inputTokens,
-      output_tokens: outputTokens,
     });
+    // Token tracking is best-effort — don't fail the generation if columns are missing
+    await updateProject(project.id, { input_tokens: inputTokens, output_tokens: outputTokens }).catch(() => {});
 
     // Log the initial version
     const version = await createVersion(
@@ -160,7 +160,7 @@ export async function POST(req: NextRequest) {
     await touchCollection(resolvedCollectionId);
     return NextResponse.json({ projectId: project.id, collectionId: resolvedCollectionId, outputUrl, outputPath, mimeType, versionNumber: version.version_number, rateLimitRemaining: remaining });
   } catch (err: unknown) {
-    await updateProject(project.id, { status: "failed" });
+    await updateProject(project.id, { status: "failed" }).catch(() => {});
     console.error("[generate]", err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Generation failed" },

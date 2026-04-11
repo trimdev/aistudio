@@ -51,18 +51,29 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Load current composite output
-    if (!project.output_image) {
+    // Load current composite output — prefer project.output_image, fall back to latest version
+    let currentOutputImage = project.output_image;
+    if (!currentOutputImage) {
+      const { data: versionRow } = await createSupabaseAdminClient()
+        .from("project_versions")
+        .select("output_image")
+        .eq("project_id", projectId)
+        .order("version_number", { ascending: false })
+        .limit(1)
+        .single();
+      currentOutputImage = versionRow?.output_image ?? null;
+    }
+    if (!currentOutputImage) {
       return NextResponse.json({ error: "Could not load the current image." }, { status: 500 });
     }
     const { data: outData, error: outError } = await adminStorage
       .from("ghost-outputs")
-      .download(project.output_image);
+      .download(currentOutputImage);
     if (outError || !outData) {
       return NextResponse.json({ error: "Could not load the current output image." }, { status: 500 });
     }
     const outputBuffer = Buffer.from(await outData.arrayBuffer());
-    const outExt = project.output_image.split(".").pop()?.toLowerCase();
+    const outExt = currentOutputImage.split(".").pop()?.toLowerCase();
     const outputMime = outExt === "jpg" || outExt === "jpeg" ? "image/jpeg"
       : outExt === "webp" ? "image/webp"
       : "image/png";

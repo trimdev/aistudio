@@ -24,7 +24,7 @@ export async function addWorkspaceMemory(workspaceId: string, note: string): Pro
     .insert({ workspace_id: workspaceId, note: note.trim().slice(0, 500) })
     .select()
     .single();
-  if (error) throw error;
+  if (error) throw new Error(error.message);
   return data as WorkspaceMemory;
 }
 

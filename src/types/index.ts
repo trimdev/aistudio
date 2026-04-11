@@ -112,6 +112,7 @@ export interface GenerationResult {
   outputUrl: string;
   outputPath: string;
   projectId: string;
+  collectionId?: string | null;
   mimeType: string;
   generatedAt: Date;
   versionNumber?: number;

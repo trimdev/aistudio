@@ -52,7 +52,7 @@ export async function listProjects(): Promise<ProjectWithUrls[]> {
     .eq("workspace_id", workspace.id)
     .order("created_at", { ascending: false });
 
-  if (error) throw error;
+  if (error) throw new Error(error.message);
   return Promise.all((data as Project[]).map(enrichProject));
 }
 
@@ -75,7 +75,7 @@ export async function createProject(name: string, collectionId?: string | null):
     .insert({ workspace_id: workspace.id, name, status: "pending", collection_id: collectionId ?? null })
     .select()
     .single();
-  if (error) throw error;
+  if (error) throw new Error(error.message);
   return data as Project;
 }
 
@@ -83,7 +83,8 @@ export async function updateProject(
   id: string,
   updates: Partial<Pick<Project, "status" | "input_images" | "output_image" | "prompt_used" | "input_tokens" | "output_tokens">>
 ): Promise<void> {
-  await admin().from("projects").update(updates).eq("id", id);
+  const { error } = await admin().from("projects").update(updates).eq("id", id);
+  if (error) throw new Error(error.message);
 }
 
 export async function listProjectsByCollection(collectionId: string): Promise<ProjectWithUrls[]> {
@@ -94,7 +95,7 @@ export async function listProjectsByCollection(collectionId: string): Promise<Pr
     .eq("workspace_id", workspace.id)
     .eq("collection_id", collectionId)
     .order("created_at", { ascending: false });
-  if (error) throw error;
+  if (error) throw new Error(error.message);
   return Promise.all((data as Project[]).map(enrichProject));
 }
 

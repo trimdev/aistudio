@@ -19,6 +19,7 @@ interface SettingsPanelProps {
   result: GenerationResult | null;
   projectName: string;
   refinePrompt: string;
+  collectionId?: string | null;
   onProjectNameChange: (v: string) => void;
   onRefinePromptChange: (v: string) => void;
   onGenerate: () => void;
@@ -26,7 +27,7 @@ interface SettingsPanelProps {
 }
 
 export function SettingsPanel({
-  images, step, result, projectName, refinePrompt,
+  images, step, result, projectName, refinePrompt, collectionId,
   onProjectNameChange, onRefinePromptChange, onGenerate, onRegenerate,
 }: SettingsPanelProps) {
   const { t } = useLanguage();
@@ -212,7 +213,10 @@ export function SettingsPanel({
       {/* Bottom actions */}
       <div className="px-5 pb-5 pt-3 border-t border-gray-100 space-y-3 shrink-0">
         {isDone && result && (
-          <a href={`/studio/projects`} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors">
+          <a
+            href={collectionId ? `/studio/projects/${collectionId}` : `/studio/projects`}
+            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+          >
             <ExternalLink className="w-3.5 h-3.5" />
             {t("set_view_projects")}
           </a>

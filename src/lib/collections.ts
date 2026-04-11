@@ -108,7 +108,7 @@ export async function createCollection(name: string): Promise<ProjectCollection>
     .insert({ workspace_id: workspace.id, name: name.trim() })
     .select()
     .single();
-  if (error) throw error;
+  if (error) throw new Error(error.message);
   return data as ProjectCollection;
 }
 
@@ -126,5 +126,5 @@ export async function deleteCollection(id: string): Promise<void> {
     .delete()
     .eq("id", id)
     .eq("workspace_id", workspace.id);
-  if (error) throw error;
+  if (error) throw new Error(error.message);
 }

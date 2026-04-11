@@ -186,9 +186,8 @@ export async function POST(req: NextRequest) {
       status: "completed",
       output_image: outputPath,
       prompt_used: `model-${variant}`,
-      input_tokens: inputTokens,
-      output_tokens: outputTokens,
     });
+    await updateProject(project.id, { input_tokens: inputTokens, output_tokens: outputTokens }).catch(() => {});
 
     const version = await createVersion(
       project.id,

@@ -142,6 +142,7 @@ export function GhostStudioTool({ collectionId }: { collectionId?: string | null
         outputUrl: data.outputUrl,
         outputPath: data.outputPath,
         projectId: data.projectId,
+        collectionId: data.collectionId ?? collectionId,
         mimeType: data.mimeType,
         generatedAt: new Date(),
         versionNumber: data.versionNumber,
@@ -208,6 +209,7 @@ export function GhostStudioTool({ collectionId }: { collectionId?: string | null
           result={result}
           projectName={projectName}
           refinePrompt={refinePrompt}
+          collectionId={result?.collectionId ?? collectionId}
           onProjectNameChange={setProjectName}
           onRefinePromptChange={setRefinePrompt}
           onGenerate={handleGenerate}

@@ -6,6 +6,17 @@
 create extension if not exists "uuid-ossp";
 
 -- -----------------------------------------------
+-- updated_at trigger function (defined first so triggers can reference it)
+-- -----------------------------------------------
+create or replace function set_updated_at()
+returns trigger as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
+
+-- -----------------------------------------------
 -- WORKSPACES (one per Supabase auth user)
 -- -----------------------------------------------
 create table if not exists workspaces (
@@ -202,17 +213,6 @@ create policy "memory_delete" on workspace_memories
 --   ghost-inputs  (private)
 --   ghost-outputs (private)
 -- -----------------------------------------------
-
--- -----------------------------------------------
--- updated_at trigger
--- -----------------------------------------------
-create or replace function set_updated_at()
-returns trigger as $$
-begin
-  new.updated_at = now();
-  return new;
-end;
-$$ language plpgsql;
 
 create trigger workspaces_updated_at
   before update on workspaces
