@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useLanguage } from "@/components/providers/LanguageProvider";
-import { LayoutDashboard, FolderOpen, Wand2, Settings, LogOut, ShieldCheck, BookOpen, Brain, ChevronDown, ChevronRight } from "lucide-react";
+import { LayoutDashboard, FolderOpen, Wand2, Settings, LogOut, ShieldCheck, BookOpen, Brain, ChevronDown, ChevronRight, LayoutGrid } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 
 export function StudioSidebar() {
@@ -15,6 +15,7 @@ export function StudioSidebar() {
   const { t, lang, setLang } = useLanguage();
   const [user, setUser] = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [modules, setModules] = useState<string[]>([]);
   const [memories, setMemories] = useState<{ id: string; note: string }[]>([]);
   const [memoriesOpen, setMemoriesOpen] = useState(true);
 
@@ -22,6 +23,9 @@ export function StudioSidebar() {
     { href: "/studio",          icon: LayoutDashboard, label: t("nav_dashboard") },
     { href: "/studio/projects", icon: FolderOpen,      label: t("nav_projects")  },
     { href: "/studio/new",      icon: Wand2,           label: t("nav_new")       },
+    ...(modules.includes("moodboard") ? [
+      { href: "/studio/moodboard", icon: LayoutGrid, label: "Moodboard" },
+    ] : []),
     { href: "/studio/settings", icon: Settings,        label: t("nav_settings")  },
     ...(isAdmin ? [
       { href: "/studio/memory", icon: BookOpen,   label: t("nav_memory") },
@@ -38,10 +42,11 @@ export function StudioSidebar() {
       if (data.user) {
         const { data: ws } = await supabase
           .from("workspaces")
-          .select("role")
+          .select("role, modules")
           .eq("user_id", data.user.id)
           .single();
         setIsAdmin(ws?.role === "admin");
+        setModules(ws?.modules ?? ["fashion"]);
       }
       fetch("/api/workspace-memory")
         .then((r) => r.json())

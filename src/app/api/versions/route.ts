@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listVersions } from "@/lib/versions";
 import { getServerUser } from "@/lib/supabase/server";
+import { getProject } from "@/lib/projects";
 
 export async function GET(req: NextRequest) {
   const user = await getServerUser();
@@ -8,6 +9,10 @@ export async function GET(req: NextRequest) {
 
   const projectId = req.nextUrl.searchParams.get("projectId");
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
+
+  // Verify the project belongs to the current workspace before exposing its versions
+  const project = await getProject(projectId);
+  if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   try {
     const versions = await listVersions(projectId);

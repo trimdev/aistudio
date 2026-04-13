@@ -227,3 +227,33 @@ create trigger projects_updated_at
 -- -----------------------------------------------
 -- ALTER TABLE workspaces
 --   ADD COLUMN IF NOT EXISTS modules text[] NOT NULL DEFAULT '{"fashion"}';
+
+-- -----------------------------------------------
+-- MOODBOARDS (run once as a migration)
+-- -----------------------------------------------
+CREATE TABLE IF NOT EXISTS moodboards (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  name         TEXT NOT NULL DEFAULT 'Moodboard',
+  items        JSONB NOT NULL DEFAULT '[]',
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE moodboards ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "moodboard_select" ON moodboards
+  FOR SELECT USING (workspace_id IN (SELECT id FROM workspaces WHERE user_id = auth.uid()));
+
+CREATE POLICY "moodboard_insert" ON moodboards
+  FOR INSERT WITH CHECK (workspace_id IN (SELECT id FROM workspaces WHERE user_id = auth.uid()));
+
+CREATE POLICY "moodboard_update" ON moodboards
+  FOR UPDATE USING (workspace_id IN (SELECT id FROM workspaces WHERE user_id = auth.uid()));
+
+CREATE POLICY "moodboard_delete" ON moodboards
+  FOR DELETE USING (workspace_id IN (SELECT id FROM workspaces WHERE user_id = auth.uid()));
+
+CREATE TRIGGER moodboards_updated_at
+  BEFORE UPDATE ON moodboards
+  FOR EACH ROW EXECUTE PROCEDURE set_updated_at();

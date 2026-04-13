@@ -210,6 +210,14 @@ export default async function AdminWorkspacePage({
                   accent: "border-amber-200 bg-amber-50",
                   check: "accent-amber-600",
                 },
+                {
+                  id: "moodboard",
+                  label: "Moodboard",
+                  desc: "Visual mood boards from model photos",
+                  emoji: "🎨",
+                  accent: "border-pink-200 bg-pink-50",
+                  check: "accent-pink-600",
+                },
               ] as const).map(({ id, label, desc, emoji, accent, check }) => {
                 const enabled = (ws.modules ?? ["fashion"]).includes(id);
                 return (

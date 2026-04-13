@@ -8,7 +8,7 @@ export type Json =
 
 // ── Database row types ────────────────────────────────────────────────────────
 
-export type WorkspaceModule = "fashion" | "furniture";
+export type WorkspaceModule = "fashion" | "furniture" | "moodboard";
 
 export interface Workspace {
   id: string;
@@ -81,6 +81,31 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   created_at: string;
+}
+
+// ── Moodboard types ───────────────────────────────────────────────────────────
+
+export interface MoodboardItem {
+  id: string;
+  projectId: string;
+  imagePath: string;
+  bucket: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  zIndex: number;
+  signedUrl?: string;
+}
+
+export interface Moodboard {
+  id: string;
+  workspace_id: string;
+  name: string;
+  items: MoodboardItem[];
+  created_at: string;
+  updated_at: string;
 }
 
 // ── Ghost Studio Tool types ───────────────────────────────────────────────────

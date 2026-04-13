@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Users, Zap, TrendingUp, Image, ArrowRight,
-  FolderOpen, Clock, Activity, LogIn, Ghost, Sofa, DollarSign,
+  FolderOpen, Clock, Activity, LogIn, Ghost, Sofa, DollarSign, LayoutGrid,
 } from "lucide-react";
 import { enterWorkspace } from "./actions";
 import { MiniTrendChart } from "./_components/MiniTrendChart";
@@ -45,6 +45,7 @@ function getInitials(email: string): string {
 const MODULE_META: Record<string, { label: string; style: string; icon: React.ReactNode }> = {
   fashion:   { label: "Fashion Studio",   style: "bg-violet-100 text-violet-700", icon: <Ghost className="w-3 h-3" /> },
   furniture: { label: "Furniture Studio", style: "bg-amber-100 text-amber-700",   icon: <Sofa  className="w-3 h-3" /> },
+  moodboard: { label: "Moodboard",        style: "bg-pink-100 text-pink-700",     icon: <LayoutGrid className="w-3 h-3" /> },
 };
 
 function ModuleBadges({ modules }: { modules: string[] | null }) {

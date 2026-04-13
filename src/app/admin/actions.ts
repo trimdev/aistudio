@@ -2,6 +2,7 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { getWorkspace } from "@/lib/workspace";
 import { getServerUser, createSupabaseAdminClient } from "@/lib/supabase/server";
 
@@ -17,8 +18,8 @@ export async function enterWorkspace(workspaceId: string) {
   cookieStore.set("gs-view-ws", workspaceId, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: 60 * 60 * 8, // 8 hours
+    sameSite: "strict",
+    maxAge: 60 * 60, // 1 hour
     path: "/",
   });
 
@@ -32,7 +33,7 @@ export async function exitWorkspace() {
   redirect("/admin");
 }
 
-const VALID_MODULES = ["fashion", "furniture"] as const;
+const VALID_MODULES = ["fashion", "furniture", "moodboard"] as const;
 
 export async function setWorkspaceModules(workspaceId: string, modules: string[]) {
   const user = await getServerUser();
@@ -49,4 +50,6 @@ export async function setWorkspaceModules(workspaceId: string, modules: string[]
     .from("workspaces")
     .update({ modules: validModules })
     .eq("id", workspaceId);
+
+  revalidatePath(`/admin/workspace/${workspaceId}`);
 }

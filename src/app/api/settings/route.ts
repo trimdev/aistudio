@@ -26,7 +26,13 @@ export async function PATCH(req: NextRequest) {
 
   const updates: Record<string, string | null> = {};
   if ("workspaceName" in body) updates.name = body.workspaceName as string;
-  if ("geminiApiKey" in body) updates.gemini_api_key = body.geminiApiKey || null;
+  if ("geminiApiKey" in body) {
+    const key = (body.geminiApiKey as string) || null;
+    if (key !== null && !/^AIza[0-9A-Za-z\-_]{35}$/.test(key)) {
+      return NextResponse.json({ error: "Invalid Gemini API key format" }, { status: 400 });
+    }
+    updates.gemini_api_key = key;
+  }
 
   const { error } = await admin.from("workspaces").update(updates).eq("id", workspace.id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
