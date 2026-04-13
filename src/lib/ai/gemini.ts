@@ -136,11 +136,8 @@ export async function generateGhostMannequin(
 
   const model = genAI.getGenerativeModel({
     model: "gemini-2.5-flash-image",
-    generationConfig: {
-      // Required for Gemini image generation models to return image output
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      responseModalities: ["TEXT", "IMAGE"] as any,
-    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    generationConfig: { responseModalities: ["TEXT", "IMAGE"] } as any,
     safetySettings: [
       {
         category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
@@ -222,10 +219,8 @@ export async function refineGhostMannequin(
 
   const model = genAI.getGenerativeModel({
     model: "gemini-2.5-flash-image",
-    generationConfig: {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      responseModalities: ["TEXT", "IMAGE"] as any,
-    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    generationConfig: { responseModalities: ["TEXT", "IMAGE"] } as any,
     safetySettings: [
       { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
       { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
@@ -426,10 +421,8 @@ export async function generateModelPhoto(
 
   const model = genAI.getGenerativeModel({
     model: "gemini-2.5-flash-image",
-    generationConfig: {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      responseModalities: ["TEXT", "IMAGE"] as any,
-    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    generationConfig: { responseModalities: ["TEXT", "IMAGE"] } as any,
     safetySettings: [
       { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
       { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
