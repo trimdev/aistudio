@@ -149,18 +149,18 @@ export function GhostStudioTool({ collectionId }: { collectionId?: string | null
       stopStepAnimation();
       setStep("done");
       const newResult: GenerationResult = {
-        outputUrl: data.outputUrl,
-        outputPath: data.outputPath,
-        projectId: data.projectId,
-        collectionId: data.collectionId ?? collectionId,
-        mimeType: data.mimeType,
+        outputUrl: data.outputUrl as string,
+        outputPath: data.outputPath as string,
+        projectId: data.projectId as string,
+        collectionId: (data.collectionId as string | null) ?? collectionId,
+        mimeType: data.mimeType as string,
         generatedAt: new Date(),
-        versionNumber: data.versionNumber,
+        versionNumber: data.versionNumber as number,
       };
       setResult(newResult);
 
       // Load versions
-      await fetchVersions(data.projectId);
+      await fetchVersions(data.projectId as string);
 
       toast.success("Szellemfigura kép elkészült!");
     } catch (err: unknown) {
