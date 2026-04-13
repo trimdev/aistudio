@@ -158,7 +158,7 @@ export async function POST(req: NextRequest) {
       // No reference photo set — continue without it
     }
 
-    const { imageBuffer, mimeType, inputTokens, outputTokens } = await generateModelPhoto(
+    const { imageBuffer, mimeType: rawMimeType, inputTokens, outputTokens } = await generateModelPhoto(
       buffers,
       mimeTypes,
       variant,
@@ -170,6 +170,8 @@ export async function POST(req: NextRequest) {
       modelRefMime,
       extraPrompt || undefined
     );
+    // Normalize Gemini's output mimeType — it can include parameters or non-standard values
+    const mimeType = normalizeMime(rawMimeType);
 
     // Generation succeeded — create project record now
     const project = await createProject(projectName, collectionId ?? undefined);

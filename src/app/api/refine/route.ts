@@ -10,6 +10,12 @@ import { buildMemoryPromptBlock } from "@/lib/memory-utils";
 
 export const maxDuration = 300;
 
+function normalizeMime(type: string): string {
+  const base = type.split(";")[0].trim().toLowerCase();
+  if (base === "image/jpg" || base === "image/pjpeg") return "image/jpeg";
+  return base;
+}
+
 export async function POST(req: NextRequest) {
   const user = await getServerUser();
   if (!user) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
@@ -83,7 +89,7 @@ export async function POST(req: NextRequest) {
       ? Buffer.from(await annotationFile!.arrayBuffer())
       : null;
 
-    const { imageBuffer, mimeType } = await refineGhostMannequin(
+    const { imageBuffer, mimeType: rawMimeType } = await refineGhostMannequin(
       inputBuffers,
       inputMimes,
       outputBuffer,
@@ -93,6 +99,8 @@ export async function POST(req: NextRequest) {
       memoryBlock,
       workspace?.gemini_api_key
     );
+    // Normalize Gemini's output mimeType — it can include parameters or non-standard values
+    const mimeType = normalizeMime(rawMimeType);
 
     const ext = mimeType.replace("image/", "");
     const outputPath = await uploadOutputImage(

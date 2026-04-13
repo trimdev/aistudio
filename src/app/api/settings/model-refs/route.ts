@@ -45,7 +45,8 @@ export async function POST(req: NextRequest) {
 
   const buffer = Buffer.from(await file.arrayBuffer());
   const rawMime = file.type || "image/jpeg";
-  const mimeType = rawMime === "image/jpg" ? "image/jpeg" : rawMime;
+  const base = rawMime.split(";")[0].trim().toLowerCase();
+  const mimeType = (base === "image/jpg" || base === "image/pjpeg") ? "image/jpeg" : base;
   const storage = createSupabaseAdminClient().storage;
 
   const { error } = await storage

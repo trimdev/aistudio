@@ -105,11 +105,12 @@ export async function POST(req: NextRequest) {
     const inputNames = ["front", "back", "side"];
     const inputPaths: string[] = [];
     for (let i = 0; i < allFiles.length; i++) {
-      const ext = allFiles[i].type.replace("image/", "").replace("jpeg", "jpg");
+      const normalizedMime = normalizeMime(allFiles[i].type);
+      const ext = normalizedMime.replace("image/", "").replace("jpeg", "jpg");
       const path = await uploadInputImage(
         buffers[i],
         `${inputNames[i]}.${ext}`,
-        normalizeMime(allFiles[i].type),
+        normalizedMime,
         project.id
       );
       inputPaths.push(path);
@@ -124,12 +125,14 @@ export async function POST(req: NextRequest) {
       : refinePrompt;
 
     // Generate image
-    const { imageBuffer, mimeType, inputTokens, outputTokens } = await generateGhostMannequin(
+    const { imageBuffer, mimeType: rawMimeType, inputTokens, outputTokens } = await generateGhostMannequin(
       buffers,
       mimeTypes,
       workspace?.gemini_api_key,
       effectiveRefinePrompt
     );
+    // Normalize Gemini's output mimeType — it can include parameters or non-standard values
+    const mimeType = normalizeMime(rawMimeType);
 
     // Upload output
     const ext = mimeType.replace("image/", "");
