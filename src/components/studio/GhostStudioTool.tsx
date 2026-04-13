@@ -25,6 +25,47 @@ const STEP_SCHEDULE: Array<[GenerationStep, number]> = [
   ["finalizing", 30_000],
 ];
 
+// ─── Client-side image compression ───────────────────────────────────────────
+// Vercel serverless functions have a 4.5 MB request body limit.
+// Compress each image to fit comfortably (max 1.5 MB, max 1920 px).
+async function compressImage(file: File, maxMB = 1.5, maxPx = 1920): Promise<File> {
+  return new Promise((resolve) => {
+    // Already small enough — skip canvas round-trip
+    if (file.size <= maxMB * 1024 * 1024) { resolve(file); return; }
+
+    const img = new Image();
+    const blobUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(blobUrl);
+      let { naturalWidth: w, naturalHeight: h } = img;
+      if (w > maxPx || h > maxPx) {
+        const r = Math.min(maxPx / w, maxPx / h);
+        w = Math.round(w * r);
+        h = Math.round(h * r);
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
+
+      let quality = 0.85;
+      const attempt = () => {
+        canvas.toBlob((blob) => {
+          if (!blob) { resolve(file); return; }
+          if (blob.size > maxMB * 1024 * 1024 && quality > 0.45) {
+            quality = Math.round((quality - 0.1) * 10) / 10;
+            attempt();
+          } else {
+            resolve(new File([blob], file.name, { type: "image/jpeg" }));
+          }
+        }, "image/jpeg", quality);
+      };
+      attempt();
+    };
+    img.onerror = () => resolve(file);
+    img.src = blobUrl;
+  });
+}
+
 function buildPreviews(images: UploadedImages): UploadedPreviews {
   return {
     front: images.front ? URL.createObjectURL(images.front) : null,
@@ -122,13 +163,19 @@ export function GhostStudioTool({ collectionId }: { collectionId?: string | null
 
     const name = projectName.trim() || `Ghost Shot ${new Date().toLocaleDateString("hu-HU", { month: "long", day: "numeric" })}`;
 
-    // Use explicit ASCII filenames — Safari throws "The string did not match the expected pattern."
-    // when FormData contains Files with non-ASCII names (e.g. Hungarian characters).
-    const safeExt = (f: File) => f.type.includes("png") ? "png" : f.type.includes("webp") ? "webp" : "jpg";
+    // Compress images client-side so the total request stays under Vercel's 4.5 MB limit.
+    // Compressed files are always JPEG, so the safe extension is always "jpg".
+    // Using explicit ASCII filenames also avoids a Safari bug with non-ASCII names in FormData.
+    const [cFront, cBack, cSide] = await Promise.all([
+      compressImage(images.front),
+      compressImage(images.back),
+      images.side ? compressImage(images.side) : Promise.resolve(null),
+    ]);
+
     const formData = new FormData();
-    formData.append("front", images.front, `front.${safeExt(images.front)}`);
-    formData.append("back", images.back, `back.${safeExt(images.back)}`);
-    if (images.side) formData.append("side", images.side, `side.${safeExt(images.side)}`);
+    formData.append("front", cFront, "front.jpg");
+    formData.append("back", cBack, "back.jpg");
+    if (cSide) formData.append("side", cSide, "side.jpg");
     formData.append("projectName", name);
     if (refinePrompt.trim()) formData.append("refinePrompt", refinePrompt.trim());
     if (collectionId) formData.append("collectionId", collectionId);
