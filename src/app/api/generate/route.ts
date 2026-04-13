@@ -70,8 +70,10 @@ export async function POST(req: NextRequest) {
   }
 
   function normalizeMime(type: string): string {
-    // Gemini API requires image/jpeg — image/jpg is non-standard and will fail pattern validation
-    return type === "image/jpg" ? "image/jpeg" : type;
+    // Gemini API only accepts image/jpeg, image/png, image/webp — strip params and normalize
+    const base = type.split(";")[0].trim().toLowerCase();
+    if (base === "image/jpg" || base === "image/pjpeg") return "image/jpeg";
+    return base;
   }
 
   const workspace = await getWorkspace();

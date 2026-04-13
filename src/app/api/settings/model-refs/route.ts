@@ -44,7 +44,8 @@ export async function POST(req: NextRequest) {
   if (!file) return NextResponse.json({ error: "file is required" }, { status: 400 });
 
   const buffer = Buffer.from(await file.arrayBuffer());
-  const mimeType = file.type || "image/jpeg";
+  const rawMime = file.type || "image/jpeg";
+  const mimeType = rawMime === "image/jpg" ? "image/jpeg" : rawMime;
   const storage = createSupabaseAdminClient().storage;
 
   const { error } = await storage

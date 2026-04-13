@@ -25,7 +25,9 @@ function checkRateLimit(userId: string): { allowed: boolean; remaining: number }
 }
 
 function normalizeMime(type: string): string {
-  return type === "image/jpg" ? "image/jpeg" : type;
+  const base = type.split(";")[0].trim().toLowerCase();
+  if (base === "image/jpg" || base === "image/pjpeg") return "image/jpeg";
+  return base;
 }
 
 export async function POST(req: NextRequest) {
@@ -150,7 +152,7 @@ export async function POST(req: NextRequest) {
       const { data: refData } = await adminStorage.from("ghost-inputs").download(refPath);
       if (refData) {
         modelRefBuffer = Buffer.from(await refData.arrayBuffer());
-        modelRefMime = refData.type || "image/jpeg";
+        modelRefMime = normalizeMime(refData.type || "image/jpeg");
       }
     } catch {
       // No reference photo set — continue without it
