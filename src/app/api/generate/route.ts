@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateGhostMannequin, MODEL_INFO } from "@/lib/ai/gemini";
 import { uploadInputImage } from "@/lib/storage";
-import { getWorkspace } from "@/lib/workspace";
+import { getEffectiveWorkspace } from "@/lib/workspace";
 import { createProject, updateProject } from "@/lib/projects";
 import { uploadOutputImage, getSignedUrl } from "@/lib/storage";
 import { createVersion } from "@/lib/versions";
@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
     return base;
   }
 
-  const workspace = await getWorkspace();
+  const workspace = await getEffectiveWorkspace();
 
   // Resolve or create a collection for this generation
   let resolvedCollectionId = collectionId;
@@ -112,26 +112,30 @@ export async function POST(req: NextRequest) {
       mimeTypes.push(mime);
     }
 
-    // Upload input images and store their paths
+    // Upload input images (best-effort — do not block generation if this fails)
     _step = "uploadInputs";
     const inputNames = ["front", "back", "side"];
     const inputPaths: string[] = [];
-    for (let i = 0; i < allFiles.length; i++) {
-      const normalizedMime = normalizeMime(allFiles[i].type);
-      const ext = normalizedMime.replace("image/", "").replace("jpeg", "jpg");
-      const path = await uploadInputImage(
-        buffers[i],
-        `${inputNames[i]}.${ext}`,
-        normalizedMime,
-        project.id
-      );
-      inputPaths.push(path);
+    try {
+      for (let i = 0; i < allFiles.length; i++) {
+        const normalizedMime = normalizeMime(allFiles[i].type);
+        const ext = normalizedMime.replace("image/", "").replace("jpeg", "jpg");
+        const path = await uploadInputImage(
+          buffers[i],
+          `${inputNames[i]}.${ext}`,
+          normalizedMime,
+          project.id
+        );
+        inputPaths.push(path);
+      }
+      await updateProject(project.id, { input_images: inputPaths });
+    } catch (uploadErr) {
+      dbg("uploadInputs failed (non-fatal):", uploadErr instanceof Error ? uploadErr.message : String(uploadErr));
     }
-    await updateProject(project.id, { input_images: inputPaths });
 
     // Load workspace memories and build prompt
     _step = "loadMemories";
-    const memories = workspace ? await listWorkspaceMemories(workspace.id) : [];
+    const memories = await listWorkspaceMemories(workspace.id).catch(() => []);
     const memoryBlock = buildMemoryPromptBlock(memories);
     const effectiveRefinePrompt = memoryBlock
       ? (refinePrompt ? `${refinePrompt}\n${memoryBlock}` : memoryBlock.trim())

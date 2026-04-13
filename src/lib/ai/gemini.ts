@@ -109,7 +109,7 @@ export interface GhostMannequinImageResult {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function resolveApiKey(clientKey?: string | null): string {
-  const key = clientKey || process.env.GEMINI_API_KEY;
+  const key = (clientKey || process.env.GEMINI_API_KEY)?.trim();
   if (!key) throw new Error("No Gemini API key configured");
   return key;
 }
