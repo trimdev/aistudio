@@ -9,6 +9,13 @@ import { getServerUser } from "@/lib/supabase/server";
 import { listWorkspaceMemories } from "@/lib/workspace-memory";
 import { buildMemoryPromptBlock } from "@/lib/memory-utils";
 import { createCollection, touchCollection } from "@/lib/collections";
+import { appendFileSync } from "fs";
+
+function dbg(...args: unknown[]) {
+  const line = `[generate ${new Date().toISOString()}] ${args.map(a => typeof a === "object" ? JSON.stringify(a) : String(a)).join(" ")}\n`;
+  process.stdout.write(line);
+  try { appendFileSync("/tmp/generate-debug.log", line); } catch { /* ignore */ }
+}
 
 export const maxDuration = 300;
 
@@ -32,6 +39,7 @@ function checkRateLimit(userId: string): { allowed: boolean; remaining: number }
 // ─── Handler ──────────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   const user = await getServerUser();
+  dbg("POST /api/generate received, user:", user?.id ?? "null");
   if (!user) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
 
   const { allowed, remaining } = checkRateLimit(user.id);
@@ -87,10 +95,13 @@ export async function POST(req: NextRequest) {
 
   const project = await createProject(projectName, resolvedCollectionId);
 
+  let _step = "init";
   try {
+    _step = "updateProcessing";
     await updateProject(project.id, { status: "processing" });
 
     // Upload inputs
+    _step = "readFiles";
     const buffers: Buffer[] = [];
     const mimeTypes: string[] = [];
 
@@ -102,6 +113,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Upload input images and store their paths
+    _step = "uploadInputs";
     const inputNames = ["front", "back", "side"];
     const inputPaths: string[] = [];
     for (let i = 0; i < allFiles.length; i++) {
@@ -118,6 +130,7 @@ export async function POST(req: NextRequest) {
     await updateProject(project.id, { input_images: inputPaths });
 
     // Load workspace memories and build prompt
+    _step = "loadMemories";
     const memories = workspace ? await listWorkspaceMemories(workspace.id) : [];
     const memoryBlock = buildMemoryPromptBlock(memories);
     const effectiveRefinePrompt = memoryBlock
@@ -125,16 +138,20 @@ export async function POST(req: NextRequest) {
       : refinePrompt;
 
     // Generate image
+    _step = "geminiGenerate";
+    dbg("mimeTypes sent to Gemini:", mimeTypes);
     const { imageBuffer, mimeType: rawMimeType, inputTokens, outputTokens } = await generateGhostMannequin(
       buffers,
       mimeTypes,
       workspace?.gemini_api_key,
       effectiveRefinePrompt
     );
+    dbg("Gemini rawMimeType:", rawMimeType);
     // Normalize Gemini's output mimeType — it can include parameters or non-standard values
     const mimeType = normalizeMime(rawMimeType);
 
     // Upload output
+    _step = "uploadOutput";
     const ext = mimeType.replace("image/", "");
     const outputPath = await uploadOutputImage(
       imageBuffer,
@@ -143,8 +160,10 @@ export async function POST(req: NextRequest) {
       project.id
     );
 
+    _step = "getSignedUrl";
     const outputUrl = await getSignedUrl("ghost-outputs", outputPath, 86400);
 
+    _step = "updateCompleted";
     await updateProject(project.id, {
       status: "completed",
       output_image: outputPath,
@@ -154,6 +173,7 @@ export async function POST(req: NextRequest) {
     await updateProject(project.id, { input_tokens: inputTokens, output_tokens: outputTokens }).catch(() => {});
 
     // Log the initial version
+    _step = "createVersion";
     const version = await createVersion(
       project.id,
       outputPath,
@@ -162,11 +182,13 @@ export async function POST(req: NextRequest) {
       "ai"
     );
 
+    _step = "touchCollection";
     await touchCollection(resolvedCollectionId);
     return NextResponse.json({ projectId: project.id, collectionId: resolvedCollectionId, outputUrl, outputPath, mimeType, versionNumber: version.version_number, rateLimitRemaining: remaining });
   } catch (err: unknown) {
     await updateProject(project.id, { status: "failed" }).catch(() => {});
-    console.error("[generate]", err);
+    dbg(`FAILED at step="${_step}"`, err instanceof Error ? err.message : String(err));
+    if (err instanceof Error) dbg("stack:", err.stack ?? "no stack");
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Generation failed" },
       { status: 500 }

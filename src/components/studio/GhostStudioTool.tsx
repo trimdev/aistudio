@@ -122,19 +122,29 @@ export function GhostStudioTool({ collectionId }: { collectionId?: string | null
 
     const name = projectName.trim() || `Ghost Shot ${new Date().toLocaleDateString("hu-HU", { month: "long", day: "numeric" })}`;
 
+    // Use explicit ASCII filenames — Safari throws "The string did not match the expected pattern."
+    // when FormData contains Files with non-ASCII names (e.g. Hungarian characters).
+    const safeExt = (f: File) => f.type.includes("png") ? "png" : f.type.includes("webp") ? "webp" : "jpg";
     const formData = new FormData();
-    formData.append("front", images.front);
-    formData.append("back", images.back);
-    if (images.side) formData.append("side", images.side);
+    formData.append("front", images.front, `front.${safeExt(images.front)}`);
+    formData.append("back", images.back, `back.${safeExt(images.back)}`);
+    if (images.side) formData.append("side", images.side, `side.${safeExt(images.side)}`);
     formData.append("projectName", name);
     if (refinePrompt.trim()) formData.append("refinePrompt", refinePrompt.trim());
     if (collectionId) formData.append("collectionId", collectionId);
 
     try {
       const res = await fetch("/api/generate", { method: "POST", body: formData });
-      const data = await res.json();
 
-      if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
+      let data: Record<string, unknown> = {};
+      try {
+        data = await res.json();
+      } catch (jsonErr) {
+        console.error("[generate] res.json() failed:", jsonErr, "status:", res.status, "statusText:", res.statusText);
+        throw new Error(`Server error ${res.status}: response was not JSON (${(jsonErr as Error).message})`);
+      }
+
+      if (!res.ok) throw new Error((data.error as string) || `Server error ${res.status}`);
 
       stopStepAnimation();
       setStep("done");
@@ -154,9 +164,12 @@ export function GhostStudioTool({ collectionId }: { collectionId?: string | null
 
       toast.success("Szellemfigura kép elkészült!");
     } catch (err: unknown) {
+      const errName = err instanceof Error ? err.constructor.name : "Unknown";
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error(`[generate] caught ${errName}:`, errMsg, err);
       stopStepAnimation();
       setStep("error");
-      const msg = err instanceof Error ? err.message : "Generálás sikertelen";
+      const msg = err instanceof Error ? `[${errName}] ${err.message}` : "Generálás sikertelen";
       setError(msg);
       toast.error(msg);
     }
