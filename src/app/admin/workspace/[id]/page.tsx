@@ -20,7 +20,15 @@ interface ProjectRow {
   created_at: string;
   output_image: string | null;
   input_images: string[];
-  model_used: string;
+  prompt_used: string | null;
+}
+
+function formatPromptUsed(value: string | null): string {
+  if (!value) return "—";
+  if (value === "gemini-2.5-flash-image") return "Ghost · Gemini 2.5 Flash";
+  if (value.startsWith("model-")) return `Model · ${value.replace("model-", "")}`;
+  // Fallback: trim known legacy prefix noise and show raw
+  return value.replace("gemini-", "Gemini ").replace(/-/g, " ");
 }
 
 interface WorkspaceRow {
@@ -91,7 +99,7 @@ export default async function AdminWorkspacePage({
   // Projects
   const { data: projectsData } = await supabase
     .from("projects")
-    .select("id, workspace_id, name, status, created_at, output_image, input_images, model_used")
+    .select("id, workspace_id, name, status, created_at, output_image, input_images, prompt_used")
     .eq("workspace_id", id)
     .order("created_at", { ascending: false });
 
@@ -299,7 +307,7 @@ export default async function AdminWorkspacePage({
                   <p className="font-semibold text-sm text-gray-900 truncate">{project.name}</p>
                   <div className="flex items-center justify-between mt-2">
                     <p className="text-xs text-gray-400">{formatHuDateTime(project.created_at)}</p>
-                    <p className="text-[11px] text-gray-400 font-mono truncate ml-2">{project.model_used}</p>
+                    <p className="text-[11px] text-gray-400 font-mono truncate ml-2">{formatPromptUsed(project.prompt_used)}</p>
                   </div>
                 </div>
               </Card>
