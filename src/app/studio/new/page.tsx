@@ -1,6 +1,6 @@
 import { getEffectiveWorkspace } from "@/lib/workspace";
 import Link from "next/link";
-import { Ghost, User, ArrowRight, Check } from "lucide-react";
+import { Ghost, User, ArrowRight, Check, Sofa, Home } from "lucide-react";
 import type { WorkspaceModule } from "@/types";
 
 const GHOST_FEATURES = [
@@ -17,10 +17,10 @@ const MODEL_FEATURES = [
 ];
 
 export default async function NewGenerationPage() {
-  let enabledModules: WorkspaceModule[] = ["fashion"];
+  let enabledModules: WorkspaceModule[] = [];
   try {
     const workspace = await getEffectiveWorkspace();
-    enabledModules = (workspace.modules ?? ["fashion"]) as WorkspaceModule[];
+    enabledModules = (workspace.modules ?? []) as WorkspaceModule[];
   } catch {
     // unauthenticated — middleware handles redirect, show nothing
     enabledModules = [];
@@ -115,21 +115,64 @@ export default async function NewGenerationPage() {
               </Link>
             )}
 
-            {/* Furniture card (shown only when furniture module is enabled) */}
+            {/* Furniture Ghost card */}
             {hasFurniture && (
-              <div className="relative h-full flex flex-col bg-white rounded-2xl border border-amber-200 p-7 shadow-sm opacity-80">
-                <div className="absolute inset-x-0 top-0 h-1 rounded-t-2xl bg-gradient-to-r from-amber-500 via-orange-400 to-yellow-300" />
-                <div className="absolute top-5 right-5">
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Hamarosan</span>
+              <Link href="/studio/furniture/ghost" className="group">
+                <div className="relative h-full flex flex-col bg-white rounded-2xl border border-amber-200 p-7 shadow-sm hover:shadow-lg hover:border-amber-300 transition-all duration-200">
+                  <div className="absolute inset-x-0 top-0 h-1 rounded-t-2xl bg-gradient-to-r from-amber-500 via-orange-400 to-yellow-300" />
+                  <div className="w-12 h-12 rounded-xl bg-amber-500 flex items-center justify-center mb-5">
+                    <Sofa className="w-6 h-6 text-white" />
+                  </div>
+                  <h2 className="text-xl font-bold text-gray-950 mb-2">Bútor Termékkép</h2>
+                  <p className="text-sm text-gray-500 leading-relaxed mb-6">
+                    Generate a clean white-background studio product shot of any furniture piece.
+                  </p>
+                  <ul className="space-y-2 mb-8 flex-1">
+                    {["Pure white studio background", "Exact colour & material fidelity", "3/4 front angle", "E-commerce ready"].map((f) => (
+                      <li key={f} className="flex items-center gap-2.5 text-sm text-gray-600">
+                        <span className="w-4 h-4 rounded-full bg-amber-50 flex items-center justify-center shrink-0">
+                          <Check className="w-2.5 h-2.5 text-amber-600" />
+                        </span>
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="flex items-center gap-2 text-sm font-bold text-amber-700 group-hover:gap-3 transition-all">
+                    Kezdés
+                    <ArrowRight className="w-4 h-4" />
+                  </div>
                 </div>
-                <div className="w-12 h-12 rounded-xl bg-amber-500 flex items-center justify-center mb-5">
-                  <span className="text-2xl leading-none">🛋️</span>
+              </Link>
+            )}
+
+            {/* Furniture Lifestyle card */}
+            {hasFurniture && (
+              <Link href="/studio/furniture/lifestyle" className="group">
+                <div className="relative h-full flex flex-col bg-white rounded-2xl border border-orange-200 p-7 shadow-sm hover:shadow-lg hover:border-orange-300 transition-all duration-200">
+                  <div className="absolute inset-x-0 top-0 h-1 rounded-t-2xl bg-gradient-to-r from-orange-400 via-amber-400 to-yellow-300" />
+                  <div className="w-12 h-12 rounded-xl bg-orange-500 flex items-center justify-center mb-5">
+                    <Home className="w-6 h-6 text-white" />
+                  </div>
+                  <h2 className="text-xl font-bold text-gray-950 mb-2">Bútor Életkép</h2>
+                  <p className="text-sm text-gray-500 leading-relaxed mb-6">
+                    Place furniture in photorealistic lifestyle settings — living rooms, terraces, cafés and more.
+                  </p>
+                  <ul className="space-y-2 mb-8 flex-1">
+                    {["12 scene types", "Indoor & outdoor", "With or without people", "Photorealistic CGI quality"].map((f) => (
+                      <li key={f} className="flex items-center gap-2.5 text-sm text-gray-600">
+                        <span className="w-4 h-4 rounded-full bg-orange-50 flex items-center justify-center shrink-0">
+                          <Check className="w-2.5 h-2.5 text-orange-500" />
+                        </span>
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="flex items-center gap-2 text-sm font-bold text-orange-700 group-hover:gap-3 transition-all">
+                    Kezdés
+                    <ArrowRight className="w-4 h-4" />
+                  </div>
                 </div>
-                <h2 className="text-xl font-bold text-gray-950 mb-2">Furniture Studio</h2>
-                <p className="text-sm text-gray-500 leading-relaxed">
-                  Place furniture in lifestyle environments — living rooms, terraces, and more.
-                </p>
-              </div>
+              </Link>
             )}
           </div>
         )}

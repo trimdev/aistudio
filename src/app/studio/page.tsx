@@ -53,6 +53,20 @@ export default async function StudioDashboard() {
     : `$${costUsd.toFixed(3)}`;
   const hasRealData = rowsWithTokens > 0;
 
+  const modules: string[] = (workspace.modules ?? ["fashion"]) as string[];
+  const hasFashion   = modules.includes("fashion");
+  const hasFurniture = modules.includes("furniture");
+
+  const tagline = hasFurniture && !hasFashion
+    ? "Az AI bútor stúdiód — alkossunk valami nagyszerűt."
+    : "Az AI stúdiód — alkossunk valami nagyszerűt.";
+
+  const ctaDescription = hasFurniture && !hasFashion
+    ? "Válassz egy projektet, majd generálj Termékkép vagy Életkép fotót."
+    : hasFashion && hasFurniture
+    ? "Válassz egy projektet, majd generálj Ghost, Modell, Termékkép vagy Életkép fotót."
+    : "Válassz egy projektet, majd generálj Ghost vagy Modell fotót.";
+
   const displayName =
     user?.user_metadata?.full_name ||
     user?.user_metadata?.name ||
@@ -63,7 +77,7 @@ export default async function StudioDashboard() {
     <div className="p-8 max-w-5xl mx-auto">
       <div className="mb-8">
         <h1 className="text-2xl font-semibold text-gray-900">Üdv vissza, {displayName} 👋</h1>
-        <p className="text-gray-500 mt-1 text-sm">Az AI szellemfigura stúdiód — alkossunk valami nagyszerűt.</p>
+        <p className="text-gray-500 mt-1 text-sm">{tagline}</p>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
@@ -128,7 +142,7 @@ export default async function StudioDashboard() {
             </div>
             <div>
               <h3 className="font-semibold text-gray-900">Új kép generálása</h3>
-              <p className="text-sm text-gray-500 mt-0.5">Válassz egy projektet, majd generálj Ghost vagy Modell fotót.</p>
+              <p className="text-sm text-gray-500 mt-0.5">{ctaDescription}</p>
             </div>
           </div>
           <Link href="/studio/projects">

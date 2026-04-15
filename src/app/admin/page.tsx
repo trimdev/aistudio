@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { enterWorkspace } from "./actions";
 import { MiniTrendChart } from "./_components/MiniTrendChart";
+import { CreateWorkspaceForm } from "./_components/CreateWorkspaceForm";
+import { DeleteWorkspaceButton } from "./_components/DeleteWorkspaceButton";
 
 interface WorkspaceRow {
   id: string;
@@ -253,6 +255,9 @@ export default async function AdminPage() {
         <MiniTrendChart days={trendDays} />
       </div>
 
+      {/* ── Create new workspace ────────────────────────────────────────── */}
+      <CreateWorkspaceForm />
+
       {/* ── Client workspace cards ──────────────────────────────────────── */}
       <div className="flex items-center justify-between mb-5">
         <h2 className="font-semibold text-gray-900">Ügyfelek munkaterületei</h2>
@@ -346,20 +351,23 @@ export default async function AdminPage() {
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center gap-2">
-                  <Link href={`/admin/workspace/${client.id}`} className="flex-1">
-                    <Button variant="outline" size="sm" className="w-full h-8 text-xs font-semibold gap-1.5">
-                      <FolderOpen className="w-3.5 h-3.5" />
-                      Részletek
-                      <ArrowRight className="w-3 h-3 ml-auto" />
-                    </Button>
-                  </Link>
-                  <form action={enterWorkspace.bind(null, client.id)} className="flex-1">
-                    <Button type="submit" size="sm" className="w-full h-8 text-xs font-semibold gap-1.5 bg-gray-900 hover:bg-gray-700 text-white">
-                      <LogIn className="w-3.5 h-3.5" />
-                      Belépés
-                    </Button>
-                  </form>
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <Link href={`/admin/workspace/${client.id}`} className="flex-1">
+                      <Button variant="outline" size="sm" className="w-full h-8 text-xs font-semibold gap-1.5">
+                        <FolderOpen className="w-3.5 h-3.5" />
+                        Részletek
+                        <ArrowRight className="w-3 h-3 ml-auto" />
+                      </Button>
+                    </Link>
+                    <form action={enterWorkspace.bind(null, client.id)} className="flex-1">
+                      <Button type="submit" size="sm" className="w-full h-8 text-xs font-semibold gap-1.5 bg-gray-900 hover:bg-gray-700 text-white">
+                        <LogIn className="w-3.5 h-3.5" />
+                        Belépés
+                      </Button>
+                    </form>
+                  </div>
+                  <DeleteWorkspaceButton workspaceId={client.id} workspaceName={client.name} />
                 </div>
               </div>
             </Card>

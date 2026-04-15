@@ -35,6 +35,86 @@ export async function exitWorkspace() {
 
 const VALID_MODULES = ["fashion", "furniture", "moodboard"] as const;
 
+/** Admin creates a new user account + workspace. */
+export async function createWorkspace(
+  formData: FormData
+): Promise<{ error?: string; name?: string }> {
+  const user = await getServerUser();
+  if (!user) return { error: "Unauthenticated" };
+
+  const workspace = await getWorkspace();
+  if (!workspace || workspace.role !== "admin") return { error: "Forbidden" };
+
+  const name     = (formData.get("name")     as string)?.trim();
+  const email    = (formData.get("email")    as string)?.trim();
+  const password = (formData.get("password") as string);
+  const modules  = formData.getAll("modules") as string[];
+
+  if (!name || !email || !password) return { error: "Minden mező kitöltése kötelező." };
+  if (password.length < 8)          return { error: "A jelszónak legalább 8 karakter hosszúnak kell lennie." };
+
+  const validModules = modules.filter((m) => (VALID_MODULES as readonly string[]).includes(m));
+
+  const admin = createSupabaseAdminClient();
+
+  // 1. Create the Supabase auth user
+  const { data: newUser, error: authErr } = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true, // skip the confirmation email
+  });
+
+  if (authErr || !newUser.user) {
+    return { error: authErr?.message ?? "Felhasználó létrehozása sikertelen." };
+  }
+
+  // 2. Create the workspace row
+  const { error: wsErr } = await admin
+    .from("workspaces")
+    .insert({ user_id: newUser.user.id, name, modules: validModules });
+
+  if (wsErr) {
+    // Roll back: delete the auth user so we don't leave orphans
+    await admin.auth.admin.deleteUser(newUser.user.id).catch(() => {});
+    return { error: wsErr.message };
+  }
+
+  revalidatePath("/admin");
+  return { name };
+}
+
+/** Admin deletes a workspace, all its data, and the auth user. */
+export async function deleteWorkspace(
+  workspaceId: string
+): Promise<{ error?: string }> {
+  const user = await getServerUser();
+  if (!user) return { error: "Unauthenticated" };
+
+  const workspace = await getWorkspace();
+  if (!workspace || workspace.role !== "admin") return { error: "Forbidden" };
+
+  const admin = createSupabaseAdminClient();
+
+  // Fetch the workspace to get user_id
+  const { data: ws } = await admin
+    .from("workspaces")
+    .select("user_id, role")
+    .eq("id", workspaceId)
+    .single();
+
+  if (!ws) return { error: "Workspace not found." };
+  if (ws.role === "admin") return { error: "Cannot delete an admin workspace." };
+
+  // Delete in FK order: projects → collections → workspace → auth user
+  await admin.from("projects").delete().eq("workspace_id", workspaceId);
+  await admin.from("project_collections").delete().eq("workspace_id", workspaceId);
+  await admin.from("workspaces").delete().eq("id", workspaceId);
+  await admin.auth.admin.deleteUser(ws.user_id);
+
+  revalidatePath("/admin");
+  return {};
+}
+
 export async function setWorkspaceModules(workspaceId: string, modules: string[]) {
   const user = await getServerUser();
   if (!user) redirect("/login");

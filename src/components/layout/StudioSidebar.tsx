@@ -6,39 +6,46 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useLanguage } from "@/components/providers/LanguageProvider";
-import { LayoutDashboard, FolderOpen, Wand2, Settings, LogOut, ShieldCheck, BookOpen, Brain, ChevronDown, ChevronRight, LayoutGrid } from "lucide-react";
-import type { User } from "@supabase/supabase-js";
+import {
+  LayoutDashboard, FolderOpen, Settings, LogOut,
+  ShieldCheck, BookOpen, Brain, ChevronDown, ChevronRight,
+  Ghost, User, Sofa, Home, LayoutGrid,
+} from "lucide-react";
+import type { User as SupabaseUser } from "@supabase/supabase-js";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface NavItem {
+  href: string;
+  icon: React.ElementType;
+  label: string;
+  exact?: boolean;
+}
+
+interface NavSection {
+  id: string;
+  label?: string;
+  accent?: string; // tailwind text colour for dot
+  items: NavItem[];
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export function StudioSidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { t, lang, setLang } = useLanguage();
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<SupabaseUser | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [modules, setModules] = useState<string[]>([]);
   const [memories, setMemories] = useState<{ id: string; note: string }[]>([]);
   const [memoriesOpen, setMemoriesOpen] = useState(true);
-
-  const NAV_ITEMS = [
-    { href: "/studio",          icon: LayoutDashboard, label: t("nav_dashboard") },
-    { href: "/studio/projects", icon: FolderOpen,      label: t("nav_projects")  },
-    { href: "/studio/new",      icon: Wand2,           label: t("nav_new")       },
-    ...(modules.includes("moodboard") ? [
-      { href: "/studio/moodboard", icon: LayoutGrid, label: "Moodboard" },
-    ] : []),
-    { href: "/studio/settings", icon: Settings,        label: t("nav_settings")  },
-    ...(isAdmin ? [
-      { href: "/studio/memory", icon: BookOpen,   label: t("nav_memory") },
-      { href: "/admin",         icon: ShieldCheck, label: t("nav_admin")  },
-    ] : []),
-  ];
 
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
     void (async () => {
       const { data } = await supabase.auth.getUser();
       setUser(data.user);
-
       if (data.user) {
         const { data: ws } = await supabase
           .from("workspaces")
@@ -46,7 +53,7 @@ export function StudioSidebar() {
           .eq("user_id", data.user.id)
           .single();
         setIsAdmin(ws?.role === "admin");
-        setModules(ws?.modules ?? ["fashion"]);
+        setModules(ws?.modules ?? []);
       }
       fetch("/api/workspace-memory")
         .then((r) => r.json())
@@ -55,8 +62,68 @@ export function StudioSidebar() {
     })();
   }, []);
 
+  const hasFashion   = modules.includes("fashion");
+  const hasFurniture = modules.includes("furniture");
+  const hasMoodboard = modules.includes("moodboard");
+
+  // Build section list dynamically based on enabled modules
+  const sections: NavSection[] = [
+    {
+      id: "core",
+      items: [
+        { href: "/studio",          icon: LayoutDashboard, label: t("nav_dashboard"), exact: true },
+        { href: "/studio/projects", icon: FolderOpen,      label: t("nav_projects") },
+      ],
+    },
+  ];
+
+  if (hasFashion) {
+    sections.push({
+      id: "fashion",
+      label: "Fashion",
+      accent: "bg-gray-400",
+      items: [
+        { href: "/studio/new/ghost",  icon: Ghost, label: "Ghost fotó"  },
+        { href: "/studio/new/model",  icon: User,  label: "Modell fotó" },
+      ],
+    });
+  }
+
+  if (hasFurniture) {
+    sections.push({
+      id: "furniture",
+      label: "Furniture",
+      accent: "bg-amber-400",
+      items: [
+        { href: "/studio/furniture/ghost",     icon: Sofa,      label: "Termékkép" },
+        { href: "/studio/furniture/lifestyle", icon: Home,      label: "Életkép"   },
+      ],
+    });
+  }
+
+  if (hasMoodboard) {
+    sections.push({
+      id: "moodboard",
+      label: "Moodboard",
+      accent: "bg-teal-400",
+      items: [
+        { href: "/studio/moodboard", icon: LayoutGrid, label: "Moodboard" },
+      ],
+    });
+  }
+
+  sections.push({
+    id: "system",
+    items: [
+      { href: "/studio/settings", icon: Settings, label: t("nav_settings") },
+      ...(isAdmin ? [
+        { href: "/studio/memory", icon: BookOpen,   label: t("nav_memory") },
+        { href: "/admin",         icon: ShieldCheck, label: t("nav_admin")  },
+      ] : []),
+    ],
+  });
+
   const handleSignOut = () => {
-    // Navigate immediately — don't wait for signOut round-trip
     router.push("/login");
     const supabase = getSupabaseBrowserClient();
     void supabase.auth.signOut();
@@ -68,6 +135,11 @@ export function StudioSidebar() {
     user?.email?.split("@")[0] || "—";
 
   const initials = displayName.slice(0, 2).toUpperCase();
+
+  function isActive(item: NavItem) {
+    if (item.exact) return pathname === item.href;
+    return pathname === item.href || pathname.startsWith(item.href + "/") || pathname.startsWith(item.href + "?");
+  }
 
   return (
     <aside className="w-56 shrink-0 border-r border-gray-100 bg-white flex flex-col h-full">
@@ -82,20 +154,37 @@ export function StudioSidebar() {
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-0.5">
-        {NAV_ITEMS.map(({ href, icon: Icon, label }) => {
-          const active = href === "/studio" ? pathname === "/studio" : pathname.startsWith(href);
-          return (
-            <Link key={href} href={href}
-              className={cn(
-                "flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-semibold transition-colors",
-                active ? "bg-gray-100 text-gray-900" : "text-gray-500 hover:text-gray-900 hover:bg-gray-50"
-              )}>
-              <Icon className="w-4 h-4" />
-              {label}
-            </Link>
-          );
-        })}
+      <nav className="flex-1 px-3 py-3 space-y-4 overflow-y-auto">
+        {sections.map((section) => (
+          <div key={section.id}>
+            {section.label && (
+              <div className="flex items-center gap-2 px-2 mb-1">
+                <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", section.accent)} />
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{section.label}</span>
+              </div>
+            )}
+            <div className="space-y-0.5">
+              {section.items.map((item) => {
+                const active = isActive(item);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      "flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-semibold transition-colors",
+                      active
+                        ? "bg-gray-100 text-gray-900"
+                        : "text-gray-500 hover:text-gray-900 hover:bg-gray-50"
+                    )}
+                  >
+                    <item.icon className="w-4 h-4 shrink-0" />
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </nav>
 
       {/* Memória */}
@@ -107,9 +196,7 @@ export function StudioSidebar() {
           >
             <Brain className="w-3.5 h-3.5 shrink-0" />
             <span className="flex-1 text-left">Memória</span>
-            {memoriesOpen
-              ? <ChevronDown className="w-3 h-3" />
-              : <ChevronRight className="w-3 h-3" />}
+            {memoriesOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
           </button>
           {memoriesOpen && (
             <ul className="px-3 pb-3 space-y-1.5 max-h-52 overflow-y-auto">
