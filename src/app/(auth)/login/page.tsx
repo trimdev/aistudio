@@ -34,6 +34,7 @@ function ShinyText({ text }: { text: string }) {
         WebkitTextFillColor: "transparent",
         color: "transparent",
         display: "inline-block",
+        paddingBottom: "0.15em",
       }}
     >
       {text}
@@ -130,7 +131,7 @@ export default function LoginPage() {
           {/* Heading */}
           <h1
             className="text-5xl sm:text-6xl md:text-7xl xl:text-8xl font-medium tracking-tighter text-center lg:text-left"
-            style={{ lineHeight: 0.85 }}
+            style={{ lineHeight: 0.95 }}
           >
             <span className="text-white block">AI Studio</span>
             <span className="block">
