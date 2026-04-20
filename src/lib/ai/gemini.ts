@@ -110,7 +110,7 @@ export interface GhostMannequinImageResult {
 
 function resolveApiKey(clientKey?: string | null): string {
   const key = (clientKey || process.env.GEMINI_API_KEY)?.trim();
-  if (!key) throw new Error("No Gemini API key configured");
+  if (!key) throw new Error("No API key configured");
   return key;
 }
 
@@ -178,7 +178,7 @@ export async function generateGhostMannequin(
     // Surface the raw text response in the error so we can debug
     const textPart = parts.find((p) => "text" in p);
     const detail = textPart && "text" in textPart ? textPart.text : "No image returned";
-    throw new Error(`Gemini did not return an image. Details: ${detail}`);
+    throw new Error(`AI did not return an image. Details: ${detail}`);
   }
 
   const usage = result.response.usageMetadata;
@@ -287,7 +287,7 @@ User's refinement request: ${feedback.trim()}`;
   if (!imgPart || !("inlineData" in imgPart) || !imgPart.inlineData?.data) {
     const textPart = parts.find((p) => "text" in p);
     const detail = textPart && "text" in textPart ? textPart.text : "No image returned";
-    throw new Error(`Gemini did not return an image. Details: ${detail}`);
+    throw new Error(`AI did not return an image. Details: ${detail}`);
   }
 
   const usage = result.response.usageMetadata;
@@ -520,7 +520,7 @@ export async function generateModelPhoto(
       if (attempt < MAX_ATTEMPTS) {
         await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
       } else {
-        throw new Error(`Gemini did not return an image. Details: ${detail}`);
+        throw new Error(`AI did not return an image. Details: ${detail}`);
       }
     }
   }
@@ -565,10 +565,305 @@ export async function agentChat(
   return result.response.text();
 }
 
+// ─── Design model photo generation ───────────────────────────────────────────
+
+/**
+ * Generate a design model fashion photo from garment reference images.
+ * The prompt is fully pre-built by the caller via `buildDesignModelPrompt`;
+ * this function is responsible only for the Gemini API call and retry logic.
+ *
+ * @param imageBuffers   Raw image buffers (front required, back and side optional)
+ * @param mimeTypes      Corresponding MIME types (same order as imageBuffers)
+ * @param prompt         Fully assembled generation prompt from buildDesignModelPrompt
+ * @param clientApiKey   Optional per-workspace Gemini key
+ */
+export async function generateDesignModelPhoto(
+  imageBuffers: Buffer[],
+  mimeTypes: string[],
+  prompt: string,
+  clientApiKey?: string | null,
+  portraitBuffer?: Buffer | null,
+  portraitMime?: string | null
+): Promise<GhostMannequinImageResult> {
+  const apiKey = resolveApiKey(clientApiKey);
+  const genAI  = new GoogleGenerativeAI(apiKey);
+
+  const geminiModel = genAI.getGenerativeModel({
+    model: "gemini-2.5-flash-image",
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    generationConfig: { responseModalities: ["TEXT", "IMAGE"] } as any,
+    safetySettings: [
+      { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+      { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+      { category: HarmCategory.HARM_CATEGORY_HARASSMENT,        threshold: HarmBlockThreshold.BLOCK_NONE },
+    ],
+  });
+
+  const garmentParts: Part[] = imageBuffers.map((buf, i) => ({
+    inlineData: {
+      data: buf.toString("base64"),
+      mimeType: mimeTypes[i] as "image/jpeg" | "image/png" | "image/webp",
+    },
+  }));
+
+  // Portrait reference part — sent AFTER garment so Gemini anchors garment first
+  const portraitPart: Part[] = portraitBuffer
+    ? [{
+        inlineData: {
+          data: portraitBuffer.toString("base64"),
+          mimeType: (portraitMime ?? "image/png") as "image/jpeg" | "image/png" | "image/webp",
+        },
+      }]
+    : [];
+
+  const imageRoleNote = portraitBuffer
+    ? `\n\nIMAGE ROLES:\n- Images 1–${imageBuffers.length}: THE GARMENT to copy onto the model. Reproduce every detail exactly.\n- Last image: MODEL APPEARANCE REFERENCE — match this person's face, hair color, hair style, and overall look EXACTLY. This is the specific model that must appear in the final photo. Do NOT change their appearance. IGNORE any clothing they wear in this reference image — only their face and hair matter.`
+    : `\n\nGARMENT IMAGES: The uploaded image(s) show the PHYSICAL GARMENT. Copy it exactly — same type, length, color, and all visible details.`;
+
+  // Image order: [garment photos] → [portrait reference (if any)] → [text prompt]
+  const requestWithPortrait    = { contents: [{ role: "user", parts: [...garmentParts, ...portraitPart, { text: prompt + imageRoleNote }] }] };
+  const requestWithoutPortrait = { contents: [{ role: "user", parts: [...garmentParts, { text: prompt + imageRoleNote }] }] };
+
+  const request = portraitBuffer ? requestWithPortrait : requestWithoutPortrait;
+
+  const MAX_ATTEMPTS   = 2;
+  const RETRY_DELAY_MS = 10_000;
+
+  // Phase 1: try with portrait reference (if provided)
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const result = await geminiModel.generateContent(request);
+    const parts  = result.response.candidates?.[0]?.content?.parts ?? [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const imgPart = parts.find((p: any) => p.inlineData?.data);
+
+    if (imgPart && "inlineData" in imgPart && imgPart.inlineData?.data) {
+      const usage = result.response.usageMetadata;
+      return {
+        imageBuffer: Buffer.from(imgPart.inlineData.data, "base64"),
+        mimeType: (imgPart.inlineData.mimeType as string) || "image/png",
+        inputTokens: usage?.promptTokenCount ?? 0,
+        outputTokens: usage?.candidatesTokenCount ?? 0,
+      };
+    }
+
+    const finishReason = String(result.response.candidates?.[0]?.finishReason ?? "UNKNOWN");
+    if (finishReason === "IMAGE_OTHER" || finishReason === "IMAGE_SAFETY") break;
+    if (attempt < MAX_ATTEMPTS) await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+  }
+
+  // Phase 2: fall back without portrait if it caused a refusal
+  if (portraitBuffer) {
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const result = await geminiModel.generateContent(requestWithoutPortrait);
+      const parts  = result.response.candidates?.[0]?.content?.parts ?? [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const imgPart = parts.find((p: any) => p.inlineData?.data);
+
+      if (imgPart && "inlineData" in imgPart && imgPart.inlineData?.data) {
+        const usage = result.response.usageMetadata;
+        return {
+          imageBuffer: Buffer.from(imgPart.inlineData.data, "base64"),
+          mimeType: (imgPart.inlineData.mimeType as string) || "image/png",
+          inputTokens: usage?.promptTokenCount ?? 0,
+          outputTokens: usage?.candidatesTokenCount ?? 0,
+        };
+      }
+
+      const textPart = parts.find((p) => "text" in p);
+      const detail   = textPart && "text" in textPart
+        ? (textPart as { text: string }).text
+        : `finish_reason=${result.response.candidates?.[0]?.finishReason ?? "UNKNOWN"}`;
+
+      if (attempt < MAX_ATTEMPTS) {
+        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+      } else {
+        throw new Error(`AI did not return an image. Details: ${detail}`);
+      }
+    }
+  }
+
+  // Unreachable — satisfies TypeScript
+  throw new Error("generateDesignModelPhoto: unexpected exit from retry loop");
+}
+
+// ─── Fashion Video Generation (Veo 2 image-to-video) ─────────────────────────
+
+export interface FashionVideoResult {
+  videoBuffer: Buffer;
+  mimeType: string;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+/**
+ * Generate a fashion video using Google Veo 2 (image-to-video).
+ * Uses the REST API directly since the SDK doesn't expose video generation.
+ *
+ * Flow:
+ * 1. Upload source image to the Files API
+ * 2. Submit video generation request to Veo 2
+ * 3. Poll the operation until complete
+ * 4. Download the generated video
+ *
+ * @param imageBuffers  Object with front (required), back (optional), side (optional) image buffers
+ * @param promptDescription  Full prompt describing motion, camera, model, background, etc.
+ * @param clientApiKey  Optional per-workspace Gemini key
+ */
+export async function generateFashionVideo(
+  imageBuffers: { front: Buffer; back: Buffer | null; side: Buffer | null },
+  promptDescription: string,
+  clientApiKey?: string | null,
+  options?: { aspectRatio?: string; durationSeconds?: number }
+): Promise<FashionVideoResult> {
+  const apiKey = resolveApiKey(clientApiKey);
+  const BASE = "https://generativelanguage.googleapis.com/v1beta";
+
+  // Use the front image as the source for image-to-video
+  const imageBase64 = imageBuffers.front.toString("base64");
+
+  // Prompt for Veo — animating an existing image, NOT generating new people
+  const videoPrompt = promptDescription;
+
+  // Map aspect ratio format
+  const aspectRatio = options?.aspectRatio || "9:16";
+  // Veo 3.1 supports 4s, 6s, or 8s — pick closest
+  const rawDuration = options?.durationSeconds || 6;
+  const durationSeconds = rawDuration <= 4 ? 4 : rawDuration <= 6 ? 6 : 8;
+
+  // Submit video generation request to Veo 3.1
+  const generateRes = await fetch(
+    `${BASE}/models/veo-3.1-generate-preview:predictLongRunning?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        instances: [
+          {
+            prompt: videoPrompt,
+            image: {
+              bytesBase64Encoded: imageBase64,
+              mimeType: "image/jpeg",
+            },
+          },
+        ],
+        parameters: {
+          aspectRatio,
+          personGeneration: "allow_adult",
+          durationSeconds,
+          resolution: "1080p",
+        },
+      }),
+    },
+  );
+
+  if (!generateRes.ok) {
+    const errBody = await generateRes.text();
+    // Detect regional human-image restriction
+    if (errBody.includes("humans are not permitted") || errBody.includes("not permitted for video generation in your country")) {
+      throw new Error("REGION_HUMAN_BLOCKED: Az Ön régiójában nem engedélyezett embereket tartalmazó képek videóvá alakítása. Használjon ghost mannequin vagy flat lay fotót forrásként.");
+    }
+    throw new Error(`Veo request failed (${generateRes.status}): ${errBody}`);
+  }
+
+  const operation = await generateRes.json();
+  const operationName: string = operation.name;
+
+  if (!operationName) {
+    throw new Error(`Veo 2 did not return an operation name: ${JSON.stringify(operation)}`);
+  }
+
+  // Poll operation until done (max ~5 minutes)
+  const MAX_POLLS = 60;
+  const POLL_INTERVAL_MS = 5_000;
+
+  for (let i = 0; i < MAX_POLLS; i++) {
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+
+    const pollRes = await fetch(
+      `${BASE}/${operationName}?key=${apiKey}`,
+      { method: "GET" },
+    );
+
+    if (!pollRes.ok) {
+      const errBody = await pollRes.text();
+      throw new Error(`Veo poll failed (${pollRes.status}): ${errBody}`);
+    }
+
+    const pollData = await pollRes.json();
+
+    if (pollData.done) {
+      // Check for error
+      if (pollData.error) {
+        throw new Error(`Veo generation failed: ${pollData.error.message || JSON.stringify(pollData.error)}`);
+      }
+
+      // Extract video from response
+      const response = pollData.response ?? pollData.result ?? pollData;
+      const videos = response?.generateVideoResponse?.generatedSamples
+        ?? response?.generatedVideos
+        ?? response?.generatedSamples
+        ?? [];
+
+      if (videos.length === 0) {
+        // Check if videos were filtered by safety
+        const gvr = response?.generateVideoResponse ?? response;
+        if (gvr?.raiMediaFilteredCount > 0) {
+          const reasons = gvr?.raiMediaFilteredReasons ?? [];
+          const reasonText = reasons.join(" ");
+          if (reasonText.includes("human") || reasonText.includes("person")) {
+            throw new Error("REGION_HUMAN_BLOCKED: Az Ön régiójában nem engedélyezett embereket tartalmazó képek videóvá alakítása. Használjon ghost mannequin vagy flat lay fotót forrásként.");
+          }
+          throw new Error("A videó tartalma nem felelt meg a biztonsági irányelveknek. Próbálj ghost mannequin vagy flat lay fotót forrásként.");
+        }
+        throw new Error(`Veo returned no videos. Full response: ${JSON.stringify(pollData).slice(0, 2000)}`);
+      }
+
+      const videoData = videos[0];
+
+      // Video can be returned as base64 or as a URI to download
+      if (videoData.video?.bytesBase64Encoded) {
+        return {
+          videoBuffer: Buffer.from(videoData.video.bytesBase64Encoded, "base64"),
+          mimeType: videoData.video.mimeType || "video/mp4",
+          inputTokens: 0,
+          outputTokens: 0,
+        };
+      }
+
+      if (videoData.video?.uri) {
+        const separator = videoData.video.uri.includes("?") ? "&" : "?";
+        const videoRes = await fetch(`${videoData.video.uri}${separator}key=${apiKey}`);
+        if (!videoRes.ok) throw new Error(`Failed to download video from URI: ${videoRes.status}`);
+        const videoArrayBuffer = await videoRes.arrayBuffer();
+        return {
+          videoBuffer: Buffer.from(videoArrayBuffer),
+          mimeType: videoData.video.mimeType || "video/mp4",
+          inputTokens: 0,
+          outputTokens: 0,
+        };
+      }
+
+      // Fallback: try bytesBase64Encoded at top level
+      if (videoData.bytesBase64Encoded) {
+        return {
+          videoBuffer: Buffer.from(videoData.bytesBase64Encoded, "base64"),
+          mimeType: "video/mp4",
+          inputTokens: 0,
+          outputTokens: 0,
+        };
+      }
+
+      throw new Error(`Veo 2 response format unexpected: ${JSON.stringify(videoData).slice(0, 500)}`);
+    }
+  }
+
+  throw new Error("Veo video generation timed out after 5 minutes.");
+}
+
 // ─── Model metadata ───────────────────────────────────────────────────────────
 
 export const MODEL_INFO = {
   id: "gemini-2.5-flash-image",
-  provider: "Google Gemini",
-  displayName: "Gemini 2.5 Flash Image",
+  provider: "Studio AI",
+  displayName: "Studio AI",
 } as const;

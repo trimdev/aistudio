@@ -168,7 +168,7 @@ export function FurnitureLifestyleTool({ collectionId, ghostProjectId }: Props) 
           <div className="flex flex-col items-center gap-4">
             <Loader2 className="w-10 h-10 text-amber-500 animate-spin" />
             <p className="text-sm font-semibold text-gray-700">{STEP_LABELS[step]}</p>
-            <p className="text-xs text-gray-400">Gemini 2.5 Flash dolgozik...</p>
+            <p className="text-xs text-gray-400">A Studio AI dolgozik...</p>
           </div>
         )}
         {step === "done" && outputUrl && (

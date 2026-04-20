@@ -3,13 +3,17 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { UserPlus, ChevronDown, ChevronUp, Ghost, Sofa, LayoutGrid, Loader2, Check } from "lucide-react";
+import { UserPlus, ChevronDown, ChevronUp, Ghost, Sofa, LayoutGrid, Loader2, Check, User, Layers, Palette, Film } from "lucide-react";
 import { createWorkspace } from "../actions";
 
 const MODULES = [
-  { id: "fashion",   label: "Fashion Studio",   desc: "Ghost Mannequin + Model Photos", icon: Ghost,       accent: "border-violet-200 bg-violet-50 text-violet-700" },
-  { id: "furniture", label: "Furniture Studio",  desc: "Lifestyle placement photos",     icon: Sofa,        accent: "border-amber-200 bg-amber-50 text-amber-700" },
-  { id: "moodboard", label: "Moodboard",         desc: "Visual mood boards",             icon: LayoutGrid,  accent: "border-pink-200 bg-pink-50 text-pink-700" },
+  { id: "fashion",      label: "Fashion Studio",      desc: "Parent module — required for all fashion tools", icon: Ghost,      accent: "border-violet-200 bg-violet-50 text-violet-700" },
+  { id: "ghost",        label: "Ghost Fotó",          desc: "Single & bulk invisible mannequin",              icon: Layers,     accent: "border-gray-200 bg-gray-50 text-gray-700" },
+  { id: "model",        label: "Modell Fotó",         desc: "Single model photo generation",                  icon: User,       accent: "border-violet-100 bg-violet-50 text-violet-600" },
+  { id: "moodboard",    label: "Moodboard",           desc: "Visual mood boards",                             icon: LayoutGrid, accent: "border-pink-200 bg-pink-50 text-pink-700" },
+  { id: "design-model", label: "Design Modell Fotó", desc: "Slavic & French AI models",                      icon: Palette,    accent: "border-rose-200 bg-rose-50 text-rose-700" },
+  { id: "video",        label: "Fashion Videó",       desc: "AI video generation with motion & music",        icon: Film,       accent: "border-indigo-200 bg-indigo-50 text-indigo-700" },
+  { id: "furniture",    label: "Furniture Studio",    desc: "Product shots + lifestyle placement",            icon: Sofa,       accent: "border-amber-200 bg-amber-50 text-amber-700" },
 ] as const;
 
 export function CreateWorkspaceForm() {

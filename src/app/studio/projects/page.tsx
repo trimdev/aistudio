@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, FolderOpen, Clock, ImageIcon, X, Loader2, Trash2 } from "lucide-react";
+import { Plus, FolderOpen, Clock, ImageIcon, X, Loader2, Trash2, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
@@ -24,6 +24,7 @@ export default function ProjectsPage() {
   const [creating, setCreating] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     fetch("/api/collections")
@@ -66,6 +67,15 @@ export default function ProjectsPage() {
     }
   };
 
+  // Deep search: match collection name OR any photo name within
+  const filteredCollections = searchQuery.trim()
+    ? collections.filter((col) => {
+        const q = searchQuery.toLowerCase();
+        if (col.name.toLowerCase().includes(q)) return true;
+        return col.photoNames?.some((n) => n.toLowerCase().includes(q)) ?? false;
+      })
+    : collections;
+
   return (
     <div className="p-8 max-w-6xl mx-auto">
       {/* Header */}
@@ -80,6 +90,39 @@ export default function ProjectsPage() {
         >
           <Plus className="w-4 h-4" /> Új projekt
         </Button>
+      </div>
+
+      {/* Search bar */}
+      <div className="mb-6 relative">
+        <div className="relative flex items-center bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md hover:border-gray-300 transition-all focus-within:shadow-md focus-within:border-gray-400">
+          <Search className="absolute left-4 w-4 h-4 text-gray-400 pointer-events-none" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Keresés projektek és fotók között..."
+            className="w-full text-sm bg-transparent rounded-2xl pl-11 pr-12 py-3.5 focus:outline-none placeholder:text-gray-400"
+          />
+          {searchQuery ? (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-3 p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          ) : (
+            <span className="absolute right-4 text-[11px] text-gray-300 font-medium select-none">
+              {collections.length} projekt
+            </span>
+          )}
+        </div>
+        {searchQuery && (
+          <div className="absolute right-0 mt-1.5">
+            <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full">
+              {filteredCollections.length} / {collections.length} találat
+            </span>
+          </div>
+        )}
       </div>
 
       {/* New project inline form */}
@@ -119,7 +162,7 @@ export default function ProjectsPage() {
         </div>
       )}
 
-      {!loading && collections.length === 0 && (
+      {!loading && filteredCollections.length === 0 && !searchQuery && (
         <Card className="border-gray-100 shadow-none">
           <div className="p-16 text-center">
             <FolderOpen className="w-12 h-12 text-gray-200 mx-auto mb-4" />
@@ -134,9 +177,18 @@ export default function ProjectsPage() {
         </Card>
       )}
 
-      {!loading && collections.length > 0 && (
+      {/* No search results */}
+      {!loading && filteredCollections.length === 0 && searchQuery && (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <Search className="w-10 h-10 text-gray-200 mb-4" />
+          <p className="font-medium text-gray-500 mb-1">Nincs találat</p>
+          <p className="text-sm text-gray-400">Próbálj más keresőkifejezést: &quot;{searchQuery}&quot;</p>
+        </div>
+      )}
+
+      {!loading && filteredCollections.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-          {collections.map((col) => (
+          {filteredCollections.map((col) => (
             <div key={col.id} className="relative group">
               <Link href={`/studio/projects/${col.id}`}>
                 <Card className="border-gray-100 shadow-none hover:border-gray-300 hover:shadow-md transition-all duration-200 overflow-hidden cursor-pointer">
@@ -167,6 +219,15 @@ export default function ProjectsPage() {
                       <Clock className="w-3 h-3" />
                       {formatHuDate(col.lastActivity)}
                     </div>
+                    {searchQuery && col.photoNames && (() => {
+                      const q = searchQuery.toLowerCase();
+                      const matches = col.photoNames.filter((n) => n.toLowerCase().includes(q));
+                      return matches.length > 0 && !col.name.toLowerCase().includes(q) ? (
+                        <p className="text-[11px] text-blue-600 mt-1 truncate">
+                          Találat: {matches.slice(0, 3).join(", ")}{matches.length > 3 ? ` +${matches.length - 3}` : ""}
+                        </p>
+                      ) : null;
+                    })()}
                   </div>
                 </Card>
               </Link>

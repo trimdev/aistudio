@@ -25,10 +25,11 @@ interface ProjectRow {
 
 function formatPromptUsed(value: string | null): string {
   if (!value) return "—";
-  if (value === "gemini-2.5-flash-image") return "Ghost · Gemini 2.5 Flash";
+  if (value === "gemini-2.5-flash-image") return "Ghost · Studio AI";
   if (value.startsWith("model-")) return `Model · ${value.replace("model-", "")}`;
+  if (value.startsWith("design-model-")) return `Design Modell · ${value.replace("design-model-", "")}`;
   // Fallback: trim known legacy prefix noise and show raw
-  return value.replace("gemini-", "Gemini ").replace(/-/g, " ");
+  return value.replace("gemini-", "").replace(/-/g, " ").trim();
 }
 
 interface WorkspaceRow {
@@ -200,57 +201,178 @@ export default async function AdminWorkspacePage({
               await setWorkspaceModules(ws.id, selected);
             }}
           >
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
-              {([
-                {
-                  id: "fashion",
-                  label: "Fashion Studio",
-                  desc: "Ghost Mannequin + Model Photos",
-                  emoji: "👗",
-                  accent: "border-violet-200 bg-violet-50",
-                  check: "accent-violet-600",
-                },
-                {
-                  id: "furniture",
-                  label: "Furniture Studio",
-                  desc: "Lifestyle placement photos",
-                  emoji: "🛋️",
-                  accent: "border-amber-200 bg-amber-50",
-                  check: "accent-amber-600",
-                },
-                {
-                  id: "moodboard",
-                  label: "Moodboard",
-                  desc: "Visual mood boards from model photos",
-                  emoji: "🎨",
-                  accent: "border-pink-200 bg-pink-50",
-                  check: "accent-pink-600",
-                },
-              ] as const).map(({ id, label, desc, emoji, accent, check }) => {
-                const enabled = (ws.modules ?? ["fashion"]).includes(id);
+            <div className="flex flex-col gap-3 mb-5">
+
+              {/* ── Fashion Studio (parent) ── */}
+              {(() => {
+                const mods = ws.modules ?? ["fashion"];
+                const fashionOn = mods.includes("fashion");
+                const ghostOn = mods.includes("ghost");
+                const modelOn = mods.includes("model");
+                const moodboardOn = mods.includes("moodboard");
+                const designModelOn = mods.includes("design-model");
+                const videoOn = mods.includes("video");
                 return (
-                  <label
-                    key={id}
-                    className={cn(
-                      "flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all",
-                      enabled ? accent : "border-gray-100 bg-gray-50 opacity-60"
-                    )}
-                  >
+                  <div className={cn(
+                    "rounded-xl border-2 overflow-hidden transition-all",
+                    fashionOn ? "border-violet-200" : "border-gray-100 opacity-70"
+                  )}>
+                    {/* Parent row */}
+                    <label className={cn(
+                      "flex items-center gap-3 px-4 py-3.5 cursor-pointer",
+                      fashionOn ? "bg-violet-50" : "bg-gray-50"
+                    )}>
+                      <input
+                        type="checkbox"
+                        name="modules"
+                        value="fashion"
+                        defaultChecked={fashionOn}
+                        className="h-4 w-4 rounded accent-violet-600"
+                      />
+                      <span className="text-xl leading-none">👗</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-900">Fashion Studio</p>
+                        <p className="text-xs text-gray-500">Ghost Mannequin + Model Photos</p>
+                      </div>
+                      <span className="text-[10px] font-bold tracking-wider text-violet-500 uppercase">Alap modul</span>
+                    </label>
+
+                    {/* Sub-modules */}
+                    <div className="border-t border-violet-100 bg-white divide-y divide-gray-50">
+                      {/* Ghost fotó sub-module */}
+                      <label className={cn(
+                        "flex items-center gap-3 pl-10 pr-4 py-3 cursor-pointer transition-colors",
+                        fashionOn ? "hover:bg-gray-50/80" : "opacity-40 pointer-events-none"
+                      )}>
+                        <input
+                          type="checkbox"
+                          name="modules"
+                          value="ghost"
+                          defaultChecked={ghostOn}
+                          disabled={!fashionOn}
+                          className="h-3.5 w-3.5 rounded accent-gray-700"
+                        />
+                        <span className="text-base leading-none">👻</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-gray-800">Ghost Fotó</p>
+                          <p className="text-[11px] text-gray-400">Single & bulk invisible mannequin generation</p>
+                        </div>
+                        <span className="text-[10px] text-gray-400 font-medium shrink-0">al-modul</span>
+                      </label>
+
+                      {/* Modell fotó sub-module */}
+                      <label className={cn(
+                        "flex items-center gap-3 pl-10 pr-4 py-3 cursor-pointer transition-colors",
+                        fashionOn ? "hover:bg-violet-50/50" : "opacity-40 pointer-events-none"
+                      )}>
+                        <input
+                          type="checkbox"
+                          name="modules"
+                          value="model"
+                          defaultChecked={modelOn}
+                          disabled={!fashionOn}
+                          className="h-3.5 w-3.5 rounded accent-violet-600"
+                        />
+                        <span className="text-base leading-none">🧍</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-gray-800">Modell Fotó</p>
+                          <p className="text-[11px] text-gray-400">Single model photo generation</p>
+                        </div>
+                        <span className="text-[10px] text-gray-400 font-medium shrink-0">al-modul</span>
+                      </label>
+
+                      {/* Moodboard sub-module */}
+                      <label className={cn(
+                        "flex items-center gap-3 pl-10 pr-4 py-3 cursor-pointer transition-colors",
+                        fashionOn ? "hover:bg-pink-50/50" : "opacity-40 pointer-events-none"
+                      )}>
+                        <input
+                          type="checkbox"
+                          name="modules"
+                          value="moodboard"
+                          defaultChecked={moodboardOn}
+                          disabled={!fashionOn}
+                          className="h-3.5 w-3.5 rounded accent-pink-500"
+                        />
+                        <span className="text-base leading-none">🎨</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-gray-800">Moodboard</p>
+                          <p className="text-[11px] text-gray-400">Visual mood boards from generated photos</p>
+                        </div>
+                        <span className="text-[10px] text-gray-400 font-medium shrink-0">al-modul</span>
+                      </label>
+
+                      {/* Design Model sub-module */}
+                      <label className={cn(
+                        "flex items-center gap-3 pl-10 pr-4 py-3 cursor-pointer transition-colors",
+                        fashionOn ? "hover:bg-rose-50/50" : "opacity-40 pointer-events-none"
+                      )}>
+                        <input
+                          type="checkbox"
+                          name="modules"
+                          value="design-model"
+                          defaultChecked={designModelOn}
+                          disabled={!fashionOn}
+                          className="h-3.5 w-3.5 rounded accent-rose-500"
+                        />
+                        <span className="text-base leading-none">🎭</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-gray-800">Design Modell Fotó</p>
+                          <p className="text-[11px] text-gray-400">Slavic & French AI models, variable backgrounds & poses</p>
+                        </div>
+                        <span className="text-[10px] text-gray-400 font-medium shrink-0">al-modul</span>
+                      </label>
+
+                      {/* Video sub-module */}
+                      <label className={cn(
+                        "flex items-center gap-3 pl-10 pr-4 py-3 cursor-pointer transition-colors",
+                        fashionOn ? "hover:bg-indigo-50/50" : "opacity-40 pointer-events-none"
+                      )}>
+                        <input
+                          type="checkbox"
+                          name="modules"
+                          value="video"
+                          defaultChecked={videoOn}
+                          disabled={!fashionOn}
+                          className="h-3.5 w-3.5 rounded accent-indigo-500"
+                        />
+                        <span className="text-base leading-none">🎬</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-gray-800">Fashion Videó</p>
+                          <p className="text-[11px] text-gray-400">AI video generation with motion styles, camera & music</p>
+                        </div>
+                        <span className="text-[10px] text-gray-400 font-medium shrink-0">al-modul</span>
+                      </label>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* ── Furniture Studio (standalone) ── */}
+              {(() => {
+                const furnitureOn = (ws.modules ?? []).includes("furniture");
+                return (
+                  <label className={cn(
+                    "flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all",
+                    furnitureOn ? "border-amber-200 bg-amber-50" : "border-gray-100 bg-gray-50 opacity-60"
+                  )}>
                     <input
                       type="checkbox"
                       name="modules"
-                      value={id}
-                      defaultChecked={enabled}
-                      className={cn("h-4 w-4 rounded", check)}
+                      value="furniture"
+                      defaultChecked={furnitureOn}
+                      className="h-4 w-4 rounded accent-amber-600"
                     />
-                    <span className="text-xl leading-none">{emoji}</span>
+                    <span className="text-xl leading-none">🛋️</span>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-gray-900">{label}</p>
-                      <p className="text-xs text-gray-500">{desc}</p>
+                      <p className="text-sm font-semibold text-gray-900">Furniture Studio</p>
+                      <p className="text-xs text-gray-500">Product shots + lifestyle placement photos</p>
                     </div>
+                    <span className="text-[10px] font-bold tracking-wider text-amber-500 uppercase">Alap modul</span>
                   </label>
                 );
-              })}
+              })()}
+
             </div>
 
             <Button type="submit" size="sm" className="bg-gray-900 hover:bg-gray-700 text-white text-xs font-semibold h-8 px-4">

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Download, ImageIcon, Loader2, Trash2, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { Download, ImageIcon, Loader2, Trash2, X, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -121,6 +121,7 @@ export function PhotoGrid({ initialPhotos }: { initialPhotos: ProjectWithUrls[] 
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const handleDelete = async (id: string) => {
     setDeleting(true);
@@ -137,6 +138,10 @@ export function PhotoGrid({ initialPhotos }: { initialPhotos: ProjectWithUrls[] 
     }
   };
 
+  const filteredPhotos = searchQuery.trim()
+    ? photos.filter((p) => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    : photos;
+
   if (photos.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -150,7 +155,7 @@ export function PhotoGrid({ initialPhotos }: { initialPhotos: ProjectWithUrls[] 
   }
 
   // Only completed photos with images are lightbox-navigable
-  const lightboxPhotos = photos.filter((p) => p.output_image_full_url);
+  const lightboxPhotos = filteredPhotos.filter((p) => p.output_image_full_url);
 
   return (
     <>
@@ -164,11 +169,48 @@ export function PhotoGrid({ initialPhotos }: { initialPhotos: ProjectWithUrls[] 
       )}
 
       <div>
-        <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">
-          Generált fotók
-        </h2>
+        <div className="flex items-center gap-4 mb-4">
+          <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider shrink-0">
+            Generált fotók
+          </h2>
+          <div className="flex-1 relative">
+            <div className="relative flex items-center bg-white rounded-xl border border-gray-200 shadow-sm hover:border-gray-300 focus-within:border-gray-400 focus-within:shadow-md transition-all">
+              <Search className="absolute left-3 w-4 h-4 text-gray-400 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Keresés fotók között..."
+                className="w-full text-sm bg-transparent rounded-xl pl-10 pr-9 py-2 focus:outline-none placeholder:text-gray-400"
+              />
+              {searchQuery ? (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2.5 p-1 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              ) : (
+                <span className="absolute right-3 text-[11px] text-gray-300 font-medium select-none">
+                  {photos.length} fotó
+                </span>
+              )}
+            </div>
+          </div>
+          {searchQuery && (
+            <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full shrink-0">
+              {filteredPhotos.length} találat
+            </span>
+          )}
+        </div>
+        {searchQuery && filteredPhotos.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <Search className="w-8 h-8 text-gray-200 mb-3" />
+            <p className="text-sm text-gray-500">Nincs találat: &quot;{searchQuery}&quot;</p>
+          </div>
+        )}
         <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5 gap-3">
-          {photos.map((photo) => {
+          {filteredPhotos.map((photo) => {
             const lbIndex = lightboxPhotos.findIndex((p) => p.id === photo.id);
             return (
               <div key={photo.id} className="relative group">
@@ -191,19 +233,22 @@ export function PhotoGrid({ initialPhotos }: { initialPhotos: ProjectWithUrls[] 
                     )}
 
                     {/* Hover overlay */}
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors opacity-0 group-hover:opacity-100 flex items-end justify-end p-1.5">
-                      {photo.output_image_full_url && (
-                        <a
-                          href={photo.output_image_full_url}
-                          download
-                          target="_blank"
-                          rel="noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="w-6 h-6 rounded-md bg-white/20 backdrop-blur-sm flex items-center justify-center hover:bg-white/40 transition-colors"
-                        >
-                          <Download className="w-3 h-3 text-white" />
-                        </a>
-                      )}
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors opacity-0 group-hover:opacity-100 flex flex-col justify-end p-1.5">
+                      <div className="flex items-end justify-between gap-1">
+                        <p className="text-[11px] font-semibold text-white truncate leading-tight">{photo.name}</p>
+                        {photo.output_image_full_url && (
+                          <a
+                            href={photo.output_image_full_url}
+                            download
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-6 h-6 rounded-md bg-white/20 backdrop-blur-sm flex items-center justify-center hover:bg-white/40 transition-colors shrink-0"
+                          >
+                            <Download className="w-3 h-3 text-white" />
+                          </a>
+                        )}
+                      </div>
                     </div>
 
                     {/* Status badge — non-completed only */}

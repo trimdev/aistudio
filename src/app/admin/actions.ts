@@ -33,7 +33,7 @@ export async function exitWorkspace() {
   redirect("/admin");
 }
 
-const VALID_MODULES = ["fashion", "furniture", "moodboard"] as const;
+const VALID_MODULES = ["fashion", "furniture", "ghost", "model", "moodboard", "design-model", "video"] as const;
 
 /** Admin creates a new user account + workspace. */
 export async function createWorkspace(

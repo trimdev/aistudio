@@ -29,7 +29,7 @@ export async function PATCH(req: NextRequest) {
   if ("geminiApiKey" in body) {
     const key = (body.geminiApiKey as string) || null;
     if (key !== null && !/^AIza[0-9A-Za-z\-_]{35}$/.test(key)) {
-      return NextResponse.json({ error: "Invalid Gemini API key format" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid API key format" }, { status: 400 });
     }
     updates.gemini_api_key = key;
   }

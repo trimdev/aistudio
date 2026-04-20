@@ -1,6 +1,6 @@
 import { getEffectiveWorkspace } from "@/lib/workspace";
 import Link from "next/link";
-import { Ghost, User, ArrowRight, Check, Sofa, Home } from "lucide-react";
+import { Ghost, User, ArrowRight, Check, Sofa, Home, Palette, Film } from "lucide-react";
 import type { WorkspaceModule } from "@/types";
 
 const GHOST_FEATURES = [
@@ -26,9 +26,13 @@ export default async function NewGenerationPage() {
     enabledModules = [];
   }
 
-  const hasFashion   = enabledModules.includes("fashion");
-  const hasFurniture = enabledModules.includes("furniture");
-  const hasAny       = hasFashion || hasFurniture;
+  const hasFashion     = enabledModules.includes("fashion");
+  const hasGhost       = enabledModules.includes("ghost");
+  const hasModel       = enabledModules.includes("model");
+  const hasFurniture   = enabledModules.includes("furniture");
+  const hasDesignModel = enabledModules.includes("design-model");
+  const hasVideo       = enabledModules.includes("video");
+  const hasAny         = hasFashion || hasFurniture;
 
   return (
     <div className="flex flex-col h-full overflow-auto bg-gray-50">
@@ -52,7 +56,7 @@ export default async function NewGenerationPage() {
         {hasAny && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-3xl">
             {/* Ghost card */}
-            {hasFashion && (
+            {hasFashion && hasGhost && (
               <Link href="/studio/new/ghost" className="group">
                 <div className="relative h-full flex flex-col bg-white rounded-2xl border border-gray-200 p-7 shadow-sm hover:shadow-lg hover:border-gray-300 transition-all duration-200">
                   <div className="absolute inset-x-0 top-0 h-1 rounded-t-2xl bg-gradient-to-r from-gray-700 via-gray-500 to-gray-400" />
@@ -82,7 +86,7 @@ export default async function NewGenerationPage() {
             )}
 
             {/* Model card */}
-            {hasFashion && (
+            {hasFashion && hasModel && (
               <Link href="/studio/new/model" className="group">
                 <div className="relative h-full flex flex-col bg-white rounded-2xl border border-violet-200 p-7 shadow-sm hover:shadow-lg hover:border-violet-300 transition-all duration-200">
                   <div className="absolute inset-x-0 top-0 h-1 rounded-t-2xl bg-gradient-to-r from-violet-500 via-pink-400 to-amber-300" />
@@ -108,6 +112,80 @@ export default async function NewGenerationPage() {
                     ))}
                   </ul>
                   <div className="flex items-center gap-2 text-sm font-bold text-violet-700 group-hover:gap-3 transition-all">
+                    Kezdés
+                    <ArrowRight className="w-4 h-4" />
+                  </div>
+                </div>
+              </Link>
+            )}
+
+            {/* Design Model card */}
+            {hasFashion && hasDesignModel && (
+              <Link href="/studio/new/design-model" className="group">
+                <div className="relative h-full flex flex-col bg-white rounded-2xl border border-rose-200 p-7 shadow-sm hover:shadow-lg hover:border-rose-300 transition-all duration-200">
+                  <div className="absolute inset-x-0 top-0 h-1 rounded-t-2xl bg-gradient-to-r from-rose-500 via-pink-400 to-fuchsia-300" />
+                  <div className="w-12 h-12 rounded-xl bg-rose-500 flex items-center justify-center mb-5">
+                    <Palette className="w-6 h-6 text-white" />
+                  </div>
+                  <h2 className="text-xl font-bold text-gray-950 mb-2">Design Modell Fotó</h2>
+                  <p className="text-sm text-gray-500 leading-relaxed mb-6">
+                    Generate editorial fashion photos with Slavic and French AI models — choose your model, background, and pose.
+                  </p>
+                  <ul className="space-y-2 mb-8 flex-1">
+                    {[
+                      "10 distinct Slavic & French AI models",
+                      "Variable backgrounds & poses",
+                      "Mix models in one generation",
+                      "Full editorial quality output",
+                    ].map((f) => (
+                      <li key={f} className="flex items-center gap-2.5 text-sm text-gray-600">
+                        <span className="w-4 h-4 rounded-full bg-pink-50 flex items-center justify-center shrink-0">
+                          <Check className="w-2.5 h-2.5 text-pink-500" />
+                        </span>
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="flex items-center gap-2 text-sm font-bold text-rose-700 group-hover:gap-3 transition-all">
+                    Kezdés
+                    <ArrowRight className="w-4 h-4" />
+                  </div>
+                </div>
+              </Link>
+            )}
+
+            {/* Video Generation card */}
+            {hasFashion && hasVideo && (
+              <Link href="/studio/new/video" className="group">
+                <div className="relative h-full flex flex-col bg-white rounded-2xl border border-indigo-200 p-7 shadow-sm hover:shadow-lg hover:border-indigo-300 transition-all duration-200">
+                  <div className="absolute inset-x-0 top-0 h-1 rounded-t-2xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-400" />
+                  <div className="absolute top-5 right-5 flex gap-1.5">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">NEW</span>
+                  </div>
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center mb-5">
+                    <Film className="w-6 h-6 text-white" />
+                  </div>
+                  <h2 className="text-xl font-bold text-gray-950 mb-2">Fashion Videó</h2>
+                  <p className="text-sm text-gray-500 leading-relaxed mb-6">
+                    Generate AI-powered fashion videos with motion styles, camera angles, music, and branding overlays.
+                  </p>
+                  <ul className="space-y-2 mb-8 flex-1">
+                    {[
+                      "10 motion styles + 6 quick templates",
+                      "8 camera angles & custom timing",
+                      "AI model & background selection",
+                      "Music mood & branding overlay",
+                      "All social media formats (9:16, 16:9, 1:1, 4:5)",
+                    ].map((f) => (
+                      <li key={f} className="flex items-center gap-2.5 text-sm text-gray-600">
+                        <span className="w-4 h-4 rounded-full bg-indigo-50 flex items-center justify-center shrink-0">
+                          <Check className="w-2.5 h-2.5 text-indigo-600" />
+                        </span>
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="flex items-center gap-2 text-sm font-bold text-indigo-700 group-hover:gap-3 transition-all">
                     Kezdés
                     <ArrowRight className="w-4 h-4" />
                   </div>

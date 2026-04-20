@@ -8,7 +8,7 @@ export type Json =
 
 // ── Database row types ────────────────────────────────────────────────────────
 
-export type WorkspaceModule = "fashion" | "furniture" | "moodboard";
+export type WorkspaceModule = "fashion" | "furniture" | "ghost" | "model" | "moodboard" | "design-model" | "video";
 
 export interface Workspace {
   id: string;
@@ -34,6 +34,7 @@ export interface ProjectCollectionWithMeta extends ProjectCollection {
   completedCount: number;
   thumbnailUrl: string | null;
   lastActivity: string;
+  photoNames: string[];
 }
 
 export interface Project {

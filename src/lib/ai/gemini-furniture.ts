@@ -15,7 +15,7 @@ import { FURNITURE_SCENES, type FurnitureScene } from "@/lib/furniture-scenes";
 
 function resolveApiKey(clientKey?: string | null): string {
   const key = (clientKey || process.env.GEMINI_API_KEY)?.trim();
-  if (!key) throw new Error("No Gemini API key configured");
+  if (!key) throw new Error("No API key configured");
   return key;
 }
 
@@ -137,7 +137,7 @@ export async function generateFurnitureGhostShot(
   if (!imgPart || !("inlineData" in imgPart) || !imgPart.inlineData?.data) {
     const textPart = parts.find((p) => "text" in p);
     const detail   = textPart && "text" in textPart ? (textPart as { text: string }).text : "No image returned";
-    throw new Error(`Gemini did not return an image. Details: ${detail}`);
+    throw new Error(`AI did not return an image. Details: ${detail}`);
   }
 
   const usage = result.response.usageMetadata;
@@ -193,11 +193,11 @@ export async function generateFurnitureLifestyle(
     if (attempt < MAX_ATTEMPTS) await new Promise((r) => setTimeout(r, 8_000));
   }
 
-  throw new Error("Gemini did not return a lifestyle image after retries.");
+  throw new Error("AI did not return a lifestyle image after retries.");
 }
 
 export const FURNITURE_MODEL_INFO = {
   id: "gemini-2.5-flash-image",
-  provider: "Google Gemini",
-  displayName: "Gemini 2.5 Flash Image",
+  provider: "Studio AI",
+  displayName: "Studio AI",
 } as const;

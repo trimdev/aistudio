@@ -9,7 +9,7 @@ import { useLanguage } from "@/components/providers/LanguageProvider";
 import {
   LayoutDashboard, FolderOpen, Settings, LogOut,
   ShieldCheck, BookOpen, Brain, ChevronDown, ChevronRight,
-  Ghost, User, Sofa, Home, LayoutGrid,
+  Ghost, User, Sofa, Home, LayoutGrid, Layers, Palette, Film,
 } from "lucide-react";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 
@@ -52,8 +52,14 @@ export function StudioSidebar() {
           .select("role, modules")
           .eq("user_id", data.user.id)
           .single();
-        setIsAdmin(ws?.role === "admin");
-        setModules(ws?.modules ?? []);
+        const isAdminUser = ws?.role === "admin";
+        setIsAdmin(isAdminUser);
+        // Admins see ALL modules regardless of their workspace config
+        setModules(
+          isAdminUser
+            ? ["fashion", "ghost", "model", "design-model", "video", "furniture", "moodboard"]
+            : ws?.modules ?? []
+        );
       }
       fetch("/api/workspace-memory")
         .then((r) => r.json())
@@ -62,9 +68,13 @@ export function StudioSidebar() {
     })();
   }, []);
 
-  const hasFashion   = modules.includes("fashion");
-  const hasFurniture = modules.includes("furniture");
-  const hasMoodboard = modules.includes("moodboard");
+  const hasFashion     = modules.includes("fashion");
+  const hasGhost       = modules.includes("ghost");
+  const hasModel       = modules.includes("model");
+  const hasDesignModel = modules.includes("design-model");
+  const hasVideo       = modules.includes("video");
+  const hasFurniture   = modules.includes("furniture");
+  const hasMoodboard   = modules.includes("moodboard");
 
   // Build section list dynamically based on enabled modules
   const sections: NavSection[] = [
@@ -83,8 +93,13 @@ export function StudioSidebar() {
       label: "Fashion",
       accent: "bg-gray-400",
       items: [
-        { href: "/studio/new/ghost",  icon: Ghost, label: "Ghost fotó"  },
-        { href: "/studio/new/model",  icon: User,  label: "Modell fotó" },
+        ...(hasGhost  ? [
+          { href: "/studio/new/ghost",       icon: Ghost,  label: "Ghost fotó" },
+          { href: "/studio/new/batch-ghost", icon: Layers, label: "Tömeges Ghost fotó" },
+        ] : []),
+        ...(hasModel  ? [{ href: "/studio/new/model",        icon: User,    label: "Modell fotó" }] : []),
+        ...(hasDesignModel ? [{ href: "/studio/new/design-model", icon: Palette, label: "Design Modell fotó" }] : []),
+        ...(hasVideo ? [{ href: "/studio/new/video", icon: Film, label: "Fashion Videó" }] : []),
       ],
     });
   }

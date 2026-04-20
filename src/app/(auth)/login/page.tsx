@@ -53,8 +53,20 @@ export default function LoginPage() {
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState<string | null>(null);
 
+  // Dev accounts for quick login (only visible in development)
+  const devAccounts = process.env.NODE_ENV === "development"
+    ? JSON.parse(process.env.NEXT_PUBLIC_DEV_ACCOUNTS || "[]") as Array<{ label: string; email: string; password: string }>
+    : [];
+
   useEffect(() => {
     document.title = "AI Studió";
+
+    // Dev auto-fill: pre-populate first dev account
+    if (process.env.NODE_ENV === "development" && devAccounts.length > 0) {
+      setEmail(devAccounts[0].email);
+      setPassword(devAccounts[0].password);
+    }
+
     if (typeof window !== "undefined" && navigator.credentials?.get) {
       navigator.credentials
         .get({ password: true, mediation: "optional" } as CredentialRequestOptions)
@@ -68,6 +80,7 @@ export default function LoginPage() {
         })
         .catch(() => {});
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -192,6 +205,31 @@ export default function LoginPage() {
                   {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : t("login_btn")}
                 </Button>
               </form>
+
+              {/* Dev account selector */}
+              {devAccounts.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-white/10">
+                  <p className="text-[10px] font-bold text-white/30 uppercase tracking-wider mb-2">Dev Quick Login</p>
+                  <div className="flex flex-col gap-1.5">
+                    {devAccounts.map((acc) => (
+                      <button
+                        key={acc.email}
+                        type="button"
+                        onClick={() => { setEmail(acc.email); setPassword(acc.password); }}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 transition-colors text-left"
+                      >
+                        <span className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-[10px] font-bold text-white/60">
+                          {acc.label[0]}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-white/80 truncate">{acc.label}</p>
+                          <p className="text-[10px] text-white/40 truncate">{acc.email}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

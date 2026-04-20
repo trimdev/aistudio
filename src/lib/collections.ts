@@ -62,7 +62,7 @@ export async function listCollections(): Promise<ProjectCollectionWithMeta[]> {
 
   const { data: projects } = await admin()
     .from("projects")
-    .select("id, collection_id, status, output_image, created_at, updated_at")
+    .select("id, collection_id, name, status, output_image, created_at, updated_at")
     .eq("workspace_id", workspace.id)
     .in("collection_id", collections.map((c) => c.id));
 
@@ -85,6 +85,7 @@ export async function listCollections(): Promise<ProjectCollectionWithMeta[]> {
         completedCount: completed.length,
         thumbnailUrl,
         lastActivity,
+        photoNames: colProjects.map((p) => p.name as string).filter(Boolean),
       };
     })
   );

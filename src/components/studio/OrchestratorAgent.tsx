@@ -136,7 +136,7 @@ export function OrchestratorAgent({ projectId, onTriggerRefine }: OrchestratorAg
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1.5 text-[11px] text-white/60 bg-white/10 rounded-full px-2.5 py-1">
               <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-              Gemini 2.5
+              Studio AI
             </div>
             <button
               onClick={() => setOpen(false)}
