@@ -5,8 +5,6 @@ import { getEffectiveWorkspace } from "./workspace";
 import { getSignedUrl } from "./storage";
 import type { Project, ProjectWithUrls } from "@/types";
 
-const admin = () => createSupabaseAdminClient();
-
 async function signUrl(
   bucket: string,
   path: string,
@@ -46,7 +44,7 @@ export async function listProjects(): Promise<ProjectWithUrls[]> {
 
   const workspace = await getEffectiveWorkspace();
 
-  const { data, error } = await admin()
+  const { data, error } = await createSupabaseAdminClient()
     .from("projects")
     .select("*")
     .eq("workspace_id", workspace.id)
@@ -58,7 +56,7 @@ export async function listProjects(): Promise<ProjectWithUrls[]> {
 
 export async function getProject(id: string): Promise<ProjectWithUrls | null> {
   const workspace = await getEffectiveWorkspace();
-  const { data } = await admin()
+  const { data } = await createSupabaseAdminClient()
     .from("projects")
     .select("*")
     .eq("id", id)
@@ -70,7 +68,7 @@ export async function getProject(id: string): Promise<ProjectWithUrls | null> {
 
 export async function createProject(name: string, collectionId?: string | null): Promise<Project> {
   const workspace = await getEffectiveWorkspace();
-  const { data, error } = await admin()
+  const { data, error } = await createSupabaseAdminClient()
     .from("projects")
     .insert({ workspace_id: workspace.id, name, status: "pending", collection_id: collectionId ?? null })
     .select()
@@ -83,13 +81,13 @@ export async function updateProject(
   id: string,
   updates: Partial<Pick<Project, "status" | "input_images" | "output_image" | "prompt_used" | "input_tokens" | "output_tokens">>
 ): Promise<void> {
-  const { error } = await admin().from("projects").update(updates).eq("id", id);
+  const { error } = await createSupabaseAdminClient().from("projects").update(updates).eq("id", id);
   if (error) throw new Error(error.message);
 }
 
 export async function listProjectsByCollection(collectionId: string): Promise<ProjectWithUrls[]> {
   const workspace = await getEffectiveWorkspace();
-  const { data, error } = await admin()
+  const { data, error } = await createSupabaseAdminClient()
     .from("projects")
     .select("*")
     .eq("workspace_id", workspace.id)
@@ -101,7 +99,7 @@ export async function listProjectsByCollection(collectionId: string): Promise<Pr
 
 export async function deleteProject(id: string): Promise<void> {
   const workspace = await getEffectiveWorkspace();
-  await admin()
+  await createSupabaseAdminClient()
     .from("projects")
     .delete()
     .eq("id", id)

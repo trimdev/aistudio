@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { downloadFile, revokePreviews } from "@/lib/image-utils";
 import { useLanguage } from "@/components/providers/LanguageProvider";
 import { ModelUploadPanel } from "./ModelUploadPanel";
 import type {
@@ -28,7 +29,6 @@ import type {
   GenerationResult,
 } from "@/types";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 type SlotState = "idle" | "loading" | "done" | "error";
 
@@ -40,7 +40,6 @@ interface PhotoSlot {
 
 type HairVariant = "blonde" | "brunette" | "both";
 
-// ─── Constants ────────────────────────────────────────────────────────────────
 
 const PHOTO_COUNTS = [4, 6, 8] as const;
 type PhotoCount = typeof PHOTO_COUNTS[number];
@@ -54,13 +53,6 @@ function emptySlots(count: number): PhotoSlot[] {
   return Array.from({ length: count }, () => ({ state: "idle" as SlotState, result: null, error: null }));
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function revokePreviews(prev: UploadedPreviews) {
-  if (prev.front) URL.revokeObjectURL(prev.front);
-  if (prev.back)  URL.revokeObjectURL(prev.back);
-  if (prev.side)  URL.revokeObjectURL(prev.side);
-}
 
 async function callGenerateSingle(
   images: UploadedImages,
@@ -102,22 +94,6 @@ async function callGenerateSingle(
     versionNumber: data.versionNumber,
   };
 }
-
-async function downloadSlot(result: GenerationResult, label: string, fmt: "png" | "webp") {
-  try {
-    const blob = await fetch(result.outputUrl).then((r) => r.blob());
-    const a    = Object.assign(document.createElement("a"), {
-      href:     URL.createObjectURL(blob),
-      download: `${label}.${fmt}`,
-    });
-    a.click();
-    URL.revokeObjectURL(a.href);
-  } catch {
-    toast.error("Letöltés sikertelen");
-  }
-}
-
-// ─── Photo slot card ──────────────────────────────────────────────────────────
 
 interface SlotCardProps {
   slot: PhotoSlot;
@@ -191,12 +167,12 @@ function SlotCard({ slot, index, label, onRegenerate, onRequestRegen }: SlotCard
         <div className="flex gap-1.5 p-1.5">
           <Button size="sm" variant="outline"
             className="flex-1 h-7 text-[11px] gap-1 border-gray-100 px-1"
-            onClick={() => downloadSlot(slot.result!, label, "png")}>
+            onClick={() => downloadFile(slot.result!.outputUrl, `${label}.png`)}>
             <Download className="w-3 h-3" />PNG
           </Button>
           <Button size="sm" variant="outline"
             className="flex-1 h-7 text-[11px] gap-1 border-gray-100 px-1"
-            onClick={() => downloadSlot(slot.result!, label, "webp")}>
+            onClick={() => downloadFile(slot.result!.outputUrl, `${label}.webp`)}>
             <Download className="w-3 h-3" />WebP
           </Button>
         </div>
@@ -205,7 +181,6 @@ function SlotCard({ slot, index, label, onRegenerate, onRequestRegen }: SlotCard
   );
 }
 
-// ─── Variant grid ─────────────────────────────────────────────────────────────
 
 interface VariantGridProps {
   label: string;
@@ -241,7 +216,6 @@ function VariantGrid({ label, badgeClass, slots, variantKey, onRegenerate, onReq
   );
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
 
 interface ModelStudioToolProps {
   collectionId?: string | null;
@@ -250,15 +224,12 @@ interface ModelStudioToolProps {
 export function ModelStudioTool({ collectionId }: ModelStudioToolProps) {
   const { t } = useLanguage();
 
-  // ── Upload state
   const [images,   setImages]   = useState<UploadedImages>({ front: null, back: null, side: null });
   const [previews, setPreviews] = useState<UploadedPreviews>({ front: null, back: null, side: null });
 
-  // ── Ghost photo state
   const [ghostPhotos,     setGhostPhotos]     = useState<GhostPhoto[]>([]);
   const [selectedGhostId, setSelectedGhostId] = useState<string | null>(null);
 
-  // ── Config
   const [projectName,    setProjectName]    = useState("");
   const [hairVariant,    setHairVariant]    = useState<HairVariant>("blonde");
   const [photoCount,     setPhotoCount]     = useState<PhotoCount>(4);
@@ -267,18 +238,15 @@ export function ModelStudioTool({ collectionId }: ModelStudioToolProps) {
   const [customKwInput,  setCustomKwInput]  = useState("");
   const [customKeywords, setCustomKeywords] = useState<string[]>([]);
 
-  // ── Regen modal state
   const [regenModal,       setRegenModal]       = useState<{ variant: "blonde" | "brunette"; index: number } | null>(null);
   const [regenExtraPrompt, setRegenExtraPrompt] = useState("");
 
-  // ── Slot state
   const [blondeSlots,   setBlondeSlots]   = useState<PhotoSlot[]>([]);
   const [brunetteSlots, setBrunetteSlots] = useState<PhotoSlot[]>([]);
   const [isRunning,     setIsRunning]     = useState(false);
   const abortRef    = useRef(false);
   const baseNameRef = useRef<string>("");
 
-  // ── Pre-populate from ghost studio transfer
   useEffect(() => {
     if (typeof window === "undefined") return;
     const win = window as unknown as Record<string, unknown>;
@@ -296,7 +264,6 @@ export function ModelStudioTool({ collectionId }: ModelStudioToolProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Fetch ghost photos for the collection
   useEffect(() => {
     if (!collectionId) return;
     fetch(`/api/projects?collectionId=${collectionId}`)
@@ -310,7 +277,6 @@ export function ModelStudioTool({ collectionId }: ModelStudioToolProps) {
       .catch(() => {});
   }, [collectionId]);
 
-  // ── Image handling
   const handleImageChange = useCallback((key: keyof UploadedImages, file: File | null) => {
     // Uploading a photo deselects any ghost project (uploaded files take priority)
     if (file) setSelectedGhostId(null);
@@ -330,7 +296,6 @@ export function ModelStudioTool({ collectionId }: ModelStudioToolProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Keyboard handling for regen modal
   useEffect(() => {
     if (!regenModal) return;
     const handler = (e: globalThis.KeyboardEvent) => {
@@ -368,7 +333,6 @@ export function ModelStudioTool({ collectionId }: ModelStudioToolProps) {
 
   const allKeywords = [...activeChips, ...customKeywords];
 
-  // ── Core: generate one variant sequentially
   async function runVariant(
     variant: "blonde" | "brunette",
     setSlots: Dispatch<SetStateAction<PhotoSlot[]>>,
@@ -430,7 +394,6 @@ export function ModelStudioTool({ collectionId }: ModelStudioToolProps) {
     }
   }
 
-  // ── Handle generate
   const handleGenerate = useCallback(async () => {
     if (!selectedGhostId && (!images.front || !images.back)) {
       toast.error(t("up_needs_both"));
@@ -464,7 +427,6 @@ export function ModelStudioTool({ collectionId }: ModelStudioToolProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [images, projectName, hairVariant, photoCount, sceneType, activeChips, customKeywords, selectedGhostId, collectionId]);
 
-  // ── Re-generate a single slot independently
   const handleRegenerateSingle = useCallback(async (
     variant: "blonde" | "brunette",
     slotIndex: number,
@@ -511,7 +473,7 @@ export function ModelStudioTool({ collectionId }: ModelStudioToolProps) {
         next[slotIndex] = { state: "error", result: null, error: err instanceof Error ? err.message : "Hiba" };
         return next;
       });
-      toast.error("Generálás sikertelen");
+      toast.error(err instanceof Error ? err.message : "Generálás sikertelen");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [images, sceneType, activeChips, customKeywords, selectedGhostId, collectionId]);

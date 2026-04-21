@@ -3,11 +3,9 @@ import { getEffectiveWorkspace } from "./workspace";
 import { getSignedUrl } from "./storage";
 import type { ProjectCollection, ProjectCollectionWithMeta } from "@/types";
 
-const admin = () => createSupabaseAdminClient();
-
 /** Auto-migrate photos with no collection into a "Piszkozat" collection. */
 async function migratOrphanedPhotos(workspaceId: string): Promise<void> {
-  const { data: orphans } = await admin()
+  const { data: orphans } = await createSupabaseAdminClient()
     .from("projects")
     .select("id")
     .eq("workspace_id", workspaceId)
@@ -16,7 +14,7 @@ async function migratOrphanedPhotos(workspaceId: string): Promise<void> {
   if (!orphans?.length) return;
 
   // Find or create the Piszkozat collection
-  const { data: existing } = await admin()
+  const { data: existing } = await createSupabaseAdminClient()
     .from("project_collections")
     .select("id")
     .eq("workspace_id", workspaceId)
@@ -26,7 +24,7 @@ async function migratOrphanedPhotos(workspaceId: string): Promise<void> {
   let draftId = existing?.id;
 
   if (!draftId) {
-    const { data: created } = await admin()
+    const { data: created } = await createSupabaseAdminClient()
       .from("project_collections")
       .insert({ workspace_id: workspaceId, name: "Piszkozat" })
       .select("id")
@@ -35,7 +33,7 @@ async function migratOrphanedPhotos(workspaceId: string): Promise<void> {
   }
 
   if (draftId) {
-    await admin()
+    await createSupabaseAdminClient()
       .from("projects")
       .update({ collection_id: draftId })
       .eq("workspace_id", workspaceId)
@@ -52,7 +50,7 @@ export async function listCollections(): Promise<ProjectCollectionWithMeta[]> {
   // One-time auto-migration: put pre-collections photos into "Piszkozat"
   await migratOrphanedPhotos(workspace.id);
 
-  const { data: collections } = await admin()
+  const { data: collections } = await createSupabaseAdminClient()
     .from("project_collections")
     .select("*")
     .eq("workspace_id", workspace.id)
@@ -60,7 +58,7 @@ export async function listCollections(): Promise<ProjectCollectionWithMeta[]> {
 
   if (!collections?.length) return [];
 
-  const { data: projects } = await admin()
+  const { data: projects } = await createSupabaseAdminClient()
     .from("projects")
     .select("id, collection_id, name, status, output_image, created_at, updated_at")
     .eq("workspace_id", workspace.id)
@@ -93,7 +91,7 @@ export async function listCollections(): Promise<ProjectCollectionWithMeta[]> {
 
 export async function getCollection(id: string): Promise<ProjectCollection | null> {
   const workspace = await getEffectiveWorkspace();
-  const { data } = await admin()
+  const { data } = await createSupabaseAdminClient()
     .from("project_collections")
     .select("*")
     .eq("id", id)
@@ -104,7 +102,7 @@ export async function getCollection(id: string): Promise<ProjectCollection | nul
 
 export async function createCollection(name: string): Promise<ProjectCollection> {
   const workspace = await getEffectiveWorkspace();
-  const { data, error } = await admin()
+  const { data, error } = await createSupabaseAdminClient()
     .from("project_collections")
     .insert({ workspace_id: workspace.id, name: name.trim() })
     .select()
@@ -114,7 +112,7 @@ export async function createCollection(name: string): Promise<ProjectCollection>
 }
 
 export async function touchCollection(id: string): Promise<void> {
-  await admin()
+  await createSupabaseAdminClient()
     .from("project_collections")
     .update({ updated_at: new Date().toISOString() })
     .eq("id", id);
@@ -122,7 +120,7 @@ export async function touchCollection(id: string): Promise<void> {
 
 export async function deleteCollection(id: string): Promise<void> {
   const workspace = await getEffectiveWorkspace();
-  const { error } = await admin()
+  const { error } = await createSupabaseAdminClient()
     .from("project_collections")
     .delete()
     .eq("id", id)

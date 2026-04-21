@@ -137,7 +137,6 @@ export default async function AdminWorkspacePage({
         Admin irányítópult
       </Link>
 
-      {/* ── Workspace header card ─────────────────────────────────────── */}
       <Card className="border-gray-100 shadow-none mb-8 overflow-hidden">
         <div className="h-1.5 w-full bg-gradient-to-r from-violet-400 via-pink-400 to-amber-300" />
         <div className="p-6 flex flex-col sm:flex-row sm:items-center gap-5">
@@ -166,7 +165,6 @@ export default async function AdminWorkspacePage({
         </div>
       </Card>
 
-      {/* ── Usage stats ──────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         {[
           { icon: FolderOpen, label: "Összes projekt",  value: stats.total,    accent: "bg-blue-50 text-blue-600" },
@@ -184,7 +182,6 @@ export default async function AdminWorkspacePage({
         ))}
       </div>
 
-      {/* ── Modules card ─────────────────────────────────────────────────── */}
       <Card className="border-gray-100 shadow-none mb-8 overflow-hidden">
         <div className="p-6">
           <div className="flex items-center gap-2 mb-5">
@@ -203,7 +200,6 @@ export default async function AdminWorkspacePage({
           >
             <div className="flex flex-col gap-3 mb-5">
 
-              {/* ── Fashion Studio (parent) ── */}
               {(() => {
                 const mods = ws.modules ?? ["fashion"];
                 const fashionOn = mods.includes("fashion");
@@ -348,7 +344,6 @@ export default async function AdminWorkspacePage({
                 );
               })()}
 
-              {/* ── Furniture Studio (standalone) ── */}
               {(() => {
                 const furnitureOn = (ws.modules ?? []).includes("furniture");
                 return (
@@ -382,7 +377,6 @@ export default async function AdminWorkspacePage({
         </div>
       </Card>
 
-      {/* ── Projects list ───────────────────────────────────────────────── */}
       <div className="flex items-center justify-between mb-4">
         <h2 className="font-semibold text-gray-900">Projektek</h2>
         <span className="text-xs text-gray-400">{projects.length} db · olvasható nézet</span>

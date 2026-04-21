@@ -6,7 +6,6 @@ import { cn } from "@/lib/utils";
 import { useLanguage } from "@/components/providers/LanguageProvider";
 import type { UploadedImages, UploadedPreviews } from "@/types";
 
-// ─── UploadSlot (inlined — do not import from UploadPanel) ───────────────────
 
 interface UploadSlotProps {
   label: string;
@@ -116,7 +115,6 @@ function UploadSlot({
   );
 }
 
-// ─── Placeholder accessory zone ───────────────────────────────────────────────
 
 interface AccessoryPlaceholderProps {
   icon: React.ReactNode;
@@ -142,7 +140,6 @@ function AccessoryPlaceholder({ icon, label }: AccessoryPlaceholderProps) {
   );
 }
 
-// ─── Main export ──────────────────────────────────────────────────────────────
 
 export interface ModelUploadPanelProps {
   images: UploadedImages;

@@ -60,7 +60,7 @@ export function SettingsPanel({
         setMemories((prev) => [data.memory, ...prev]);
         setNewMemory("");
       }
-    } catch { /* silent */ } finally {
+    } catch { /* non-critical */ } finally {
       setIsSavingMemory(false);
     }
   };

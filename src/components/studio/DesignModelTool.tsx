@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { compressImage, downloadFile as downloadImage } from "@/lib/image-utils";
 import { useLanguage } from "@/components/providers/LanguageProvider";
 import {
   DESIGN_MODELS,
@@ -32,8 +33,6 @@ import {
   type DesignBackground,
   type DesignPose,
 } from "@/lib/design-model-data";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 type ModelFilter = "all" | "slavic" | "french" | "blonde" | "brunette";
 type BgFilter = "all" | "studio" | "lifestyle";
@@ -83,61 +82,7 @@ interface PoseAssignment {
   poseId: string;
 }
 
-// ─── Image compression (identical to GhostStudioTool) ────────────────────────
-
-async function compressImage(file: File, maxMB = 1.5, maxPx = 1920): Promise<File> {
-  return new Promise((resolve) => {
-    if (file.size <= maxMB * 1024 * 1024) { resolve(file); return; }
-    const img = new Image();
-    const blobUrl = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(blobUrl);
-      let { naturalWidth: w, naturalHeight: h } = img;
-      if (w > maxPx || h > maxPx) {
-        const r = Math.min(maxPx / w, maxPx / h);
-        w = Math.round(w * r);
-        h = Math.round(h * r);
-      }
-      const canvas = document.createElement("canvas");
-      canvas.width = w;
-      canvas.height = h;
-      canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
-      let quality = 0.85;
-      const attempt = () => {
-        canvas.toBlob((blob) => {
-          if (!blob) { resolve(file); return; }
-          if (blob.size > maxMB * 1024 * 1024 && quality > 0.45) {
-            quality = Math.round((quality - 0.1) * 10) / 10;
-            attempt();
-          } else {
-            resolve(new File([blob], file.name, { type: "image/jpeg" }));
-          }
-        }, "image/jpeg", quality);
-      };
-      attempt();
-    };
-    img.onerror = () => { URL.revokeObjectURL(blobUrl); resolve(file); };
-    img.src = blobUrl;
-  });
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-async function downloadImage(url: string, filename: string) {
-  try {
-    const blob = await fetch(url).then((r) => r.blob());
-    const a = Object.assign(document.createElement("a"), {
-      href: URL.createObjectURL(blob),
-      download: filename,
-    });
-    a.click();
-    URL.revokeObjectURL(a.href);
-  } catch {
-    toast.error("Letöltés sikertelen");
-  }
-}
-
-// ─── Step progress indicator ──────────────────────────────────────────────────
+// Step progress indicator
 
 const WIZARD_STEPS = ["Modell", "Ruha", "Háttér & Póz", "Generálás"];
 
@@ -181,8 +126,6 @@ function StepIndicator({ current }: { current: number }) {
     </div>
   );
 }
-
-// ─── Model card ───────────────────────────────────────────────────────────────
 
 function ModelCard({
   model,
@@ -235,8 +178,6 @@ function ModelCard({
     </button>
   );
 }
-
-// ─── Upload slot ──────────────────────────────────────────────────────────────
 
 interface UploadSlotProps {
   label: string;
@@ -312,8 +253,6 @@ function UploadSlot({ label, required, file, preview, disabled, onFile }: Upload
   );
 }
 
-// ─── Background card ──────────────────────────────────────────────────────────
-
 function BackgroundCard({
   bg,
   selected,
@@ -362,8 +301,6 @@ function BackgroundCard({
   );
 }
 
-// ─── Pose chip ────────────────────────────────────────────────────────────────
-
 function PoseChip({
   pose,
   selected,
@@ -397,8 +334,6 @@ function PoseChip({
     </button>
   );
 }
-
-// ─── Pose slot row — multiple slots side by side ─────────────────────────────
 
 function PoseSlotRow({
   count,
@@ -447,8 +382,6 @@ function PoseSlotRow({
     </div>
   );
 }
-
-// ─── Result slot card ─────────────────────────────────────────────────────────
 
 function ResultCard({
   slot,
@@ -538,8 +471,6 @@ function ResultCard({
 }
 
 
-// ─── Main component ───────────────────────────────────────────────────────────
-
 interface DesignModelToolProps {
   collectionId: string | null;
 }
@@ -547,22 +478,17 @@ interface DesignModelToolProps {
 export function DesignModelTool({ collectionId: collectionIdProp }: DesignModelToolProps) {
   const { lang } = useLanguage();
 
-  // ── Active collection (null = show project required screen)
   const [activeCollectionId] = useState<string | null>(collectionIdProp);
 
-  // ── Ghost photos from the collection (for Step 1 picker)
   const [ghostPhotos, setGhostPhotos] = useState<Array<{ id: string; name: string; output_image_url: string | null }>>([]);
   const [selectedGhostId, setSelectedGhostId] = useState<string | null>(null);
   const [ghostLoading, setGhostLoading] = useState(false);
 
-  // ── Wizard step
   const [step, setStep] = useState(0);
 
-  // ── Step 0: model selection
   const [modelFilter, setModelFilter] = useState<ModelFilter>("all");
   const [selectedModelIds, setSelectedModelIds] = useState<string[]>([]);
 
-  // ── Step 1: garment upload
   const [frontFile, setFrontFile] = useState<File | null>(null);
   const [backFile, setBackFile] = useState<File | null>(null);
   const [sideFile, setSideFile] = useState<File | null>(null);
@@ -570,7 +496,6 @@ export function DesignModelTool({ collectionId: collectionIdProp }: DesignModelT
   const [backPreview, setBackPreview] = useState<string | null>(null);
   const [sidePreview, setSidePreview] = useState<string | null>(null);
 
-  // ── Step 2: background & pose
   const [bgFilter, setBgFilter] = useState<BgFilter>("all");
   const [selectedBgId, setSelectedBgId] = useState<string>("studio_white");
   // Single model: count 1=single; per-slot poses array
@@ -581,7 +506,6 @@ export function DesignModelTool({ collectionId: collectionIdProp }: DesignModelT
   const [multiModelPhotoCount, setMultiModelPhotoCount] = useState<1 | 2 | 4>(1);
   const [perModelPoses, setPerModelPoses] = useState<Record<string, string[]>>({});
 
-  // ── Step 3: configure & generate
   const [projectName, setProjectName] = useState("");
   const [extraPrompt, setExtraPrompt] = useState("");
   const [results, setResults] = useState<SlotResult[]>([]);
@@ -623,7 +547,6 @@ export function DesignModelTool({ collectionId: collectionIdProp }: DesignModelT
       .finally(() => setGhostLoading(false));
   }, [activeCollectionId]);
 
-  // ── Derived
   const isMultiModel = selectedModelIds.length > 1;
   const selectedModels = DESIGN_MODELS.filter((m) => selectedModelIds.includes(m.id));
 
@@ -678,7 +601,6 @@ export function DesignModelTool({ collectionId: collectionIdProp }: DesignModelT
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedModelIds]);
 
-  // ── File handlers
   function makeFileHandler(
     setFile: (f: File | null) => void,
     setPreview: (p: string | null) => void,
@@ -695,7 +617,6 @@ export function DesignModelTool({ collectionId: collectionIdProp }: DesignModelT
   const handleBack = makeFileHandler(setBackFile, setBackPreview, backPreview);
   const handleSide = makeFileHandler(setSideFile, setSidePreview, sidePreview);
 
-  // ── Step animation
   function startStepAnimation() {
     stepTimers.current.forEach(clearTimeout);
     stepTimers.current = [];
@@ -710,7 +631,6 @@ export function DesignModelTool({ collectionId: collectionIdProp }: DesignModelT
     stepTimers.current = [];
   }
 
-  // ── Generate single slot
   async function generateSlot(
     slotIndex: number,
     modelId: string,
@@ -785,7 +705,6 @@ export function DesignModelTool({ collectionId: collectionIdProp }: DesignModelT
     }
   }
 
-  // ── Handle generate all
   const handleGenerate = useCallback(async () => {
     if (!frontFile && !selectedGhostId) {
       toast.error("Tölts fel ruhafotót, vagy válassz ghost fotót.");
@@ -850,7 +769,6 @@ export function DesignModelTool({ collectionId: collectionIdProp }: DesignModelT
     setStep(0);
   };
 
-  // ── Navigation guards
   const canProceed0 = selectedModelIds.length > 0;
   const canProceed1 = !!frontFile || !!selectedGhostId;
   const canProceed2 = !!selectedBgId;
@@ -858,7 +776,6 @@ export function DesignModelTool({ collectionId: collectionIdProp }: DesignModelT
   const hasResults = results.length > 0;
   const allDone = results.length > 0 && results.every((r) => r.status === "done" || r.status === "error");
 
-  // ── Show project required screen if no collection selected (matches batch ghost pattern)
   if (!activeCollectionId) {
     return (
       <div className="flex items-center justify-center h-full">

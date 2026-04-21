@@ -10,8 +10,6 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useLanguage } from "@/components/providers/LanguageProvider";
 import { useAnimationFrame } from "framer-motion";
 
-// ─── ShinyText ────────────────────────────────────────────────────────────────
-
 function ShinyText({ text }: { text: string }) {
   const progressRef = useRef(0);
   const [bgPos, setBgPos] = useState("200% center");
@@ -41,8 +39,6 @@ function ShinyText({ text }: { text: string }) {
     </span>
   );
 }
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function LoginPage() {
   const router = useRouter();
@@ -126,7 +122,6 @@ export default function LoginPage() {
   return (
     <div className="relative h-screen overflow-hidden bg-black font-sans">
 
-      {/* ── Video background ─────────────────────────────────────────────── */}
       <video
         className="absolute inset-0 w-full h-full object-cover"
         src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260328_105406_16f4600d-7a92-4292-b96e-b19156c7830a.mp4"
@@ -137,7 +132,6 @@ export default function LoginPage() {
       />
       <div className="absolute inset-0 bg-black/50" />
 
-      {/* ── Content ──────────────────────────────────────────────────────── */}
       <div className="relative z-10 flex h-full items-center justify-center px-4">
         <div className="flex flex-col lg:flex-row items-center justify-center gap-16 w-full max-w-5xl">
 

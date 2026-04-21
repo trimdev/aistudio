@@ -7,14 +7,9 @@ import { createVersion } from "@/lib/versions";
 import { getServerUser, createSupabaseAdminClient } from "@/lib/supabase/server";
 import { listWorkspaceMemories } from "@/lib/workspace-memory";
 import { buildMemoryPromptBlock } from "@/lib/memory-utils";
+import { normalizeMime } from "@/lib/api/mime";
 
 export const maxDuration = 300;
-
-function normalizeMime(type: string): string {
-  const base = type.split(";")[0].trim().toLowerCase();
-  if (base === "image/jpg" || base === "image/pjpeg") return "image/jpeg";
-  return base;
-}
 
 export async function POST(req: NextRequest) {
   const user = await getServerUser();
@@ -137,7 +132,7 @@ export async function POST(req: NextRequest) {
   } catch (err: unknown) {
     console.error("[refine]", err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Refinement failed" },
+      { error: err instanceof Error ? (err.name !== "Error" ? err.toString() : err.message) : String(err) },
       { status: 500 }
     );
   }

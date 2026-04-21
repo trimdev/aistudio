@@ -7,6 +7,8 @@ import { UploadPanel } from "./UploadPanel";
 import { PreviewPanel } from "./PreviewPanel";
 import { SettingsPanel } from "./SettingsPanel";
 
+import { compressImage, revokePreviews } from "@/lib/image-utils";
+
 import type {
   UploadedImages,
   UploadedPreviews,
@@ -15,7 +17,6 @@ import type {
   ProjectVersionWithUrl,
 } from "@/types";
 
-// ─── Step timing schedule ─────────────────────────────────────────────────────
 const STEP_SCHEDULE: Array<[GenerationStep, number]> = [
   ["uploading", 0],
   ["analyzing", 2_500],
@@ -25,59 +26,12 @@ const STEP_SCHEDULE: Array<[GenerationStep, number]> = [
   ["finalizing", 30_000],
 ];
 
-// ─── Client-side image compression ───────────────────────────────────────────
-// Vercel serverless functions have a 4.5 MB request body limit.
-// Compress each image to fit comfortably (max 1.5 MB, max 1920 px).
-async function compressImage(file: File, maxMB = 1.5, maxPx = 1920): Promise<File> {
-  return new Promise((resolve) => {
-    // Already small enough — skip canvas round-trip
-    if (file.size <= maxMB * 1024 * 1024) { resolve(file); return; }
-
-    const img = new Image();
-    const blobUrl = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(blobUrl);
-      let { naturalWidth: w, naturalHeight: h } = img;
-      if (w > maxPx || h > maxPx) {
-        const r = Math.min(maxPx / w, maxPx / h);
-        w = Math.round(w * r);
-        h = Math.round(h * r);
-      }
-      const canvas = document.createElement("canvas");
-      canvas.width = w; canvas.height = h;
-      canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
-
-      let quality = 0.85;
-      const attempt = () => {
-        canvas.toBlob((blob) => {
-          if (!blob) { resolve(file); return; }
-          if (blob.size > maxMB * 1024 * 1024 && quality > 0.45) {
-            quality = Math.round((quality - 0.1) * 10) / 10;
-            attempt();
-          } else {
-            resolve(new File([blob], file.name, { type: "image/jpeg" }));
-          }
-        }, "image/jpeg", quality);
-      };
-      attempt();
-    };
-    img.onerror = () => resolve(file);
-    img.src = blobUrl;
-  });
-}
-
 function buildPreviews(images: UploadedImages): UploadedPreviews {
   return {
     front: images.front ? URL.createObjectURL(images.front) : null,
     back: images.back ? URL.createObjectURL(images.back) : null,
     side: images.side ? URL.createObjectURL(images.side) : null,
   };
-}
-
-function revokePreviews(prev: UploadedPreviews) {
-  if (prev.front) URL.revokeObjectURL(prev.front);
-  if (prev.back) URL.revokeObjectURL(prev.back);
-  if (prev.side) URL.revokeObjectURL(prev.side);
 }
 
 export function GhostStudioTool({ collectionId }: { collectionId?: string | null }) {
@@ -96,7 +50,6 @@ export function GhostStudioTool({ collectionId }: { collectionId?: string | null
 
   const stepTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-  // ── Image management ────────────────────────────────────────────────────────
   const handleImageChange = useCallback(
     (key: keyof UploadedImages, file: File | null) => {
       setImages((prev) => {
@@ -120,7 +73,6 @@ export function GhostStudioTool({ collectionId }: { collectionId?: string | null
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Fetch versions ──────────────────────────────────────────────────────────
   const fetchVersions = useCallback(async (projectId: string) => {
     try {
       const res = await fetch(`/api/versions?projectId=${projectId}`);
@@ -134,7 +86,6 @@ export function GhostStudioTool({ collectionId }: { collectionId?: string | null
     }
   }, []);
 
-  // ── Step animation ──────────────────────────────────────────────────────────
   function startStepAnimation() {
     stepTimers.current.forEach(clearTimeout);
     stepTimers.current = [];
@@ -149,7 +100,6 @@ export function GhostStudioTool({ collectionId }: { collectionId?: string | null
     stepTimers.current = [];
   }
 
-  // ── Generate ────────────────────────────────────────────────────────────────
   const handleGenerate = useCallback(async () => {
     if (!images.front || !images.back) {
       toast.error("Az elöl és hátul fotók feltöltése szükséges.");
@@ -223,7 +173,6 @@ export function GhostStudioTool({ collectionId }: { collectionId?: string | null
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [images, projectName, refinePrompt, fetchVersions]);
 
-  // ── Regenerate ──────────────────────────────────────────────────────────────
   const handleRegenerate = useCallback(() => {
     setResult(null);
     setError(null);
@@ -232,7 +181,6 @@ export function GhostStudioTool({ collectionId }: { collectionId?: string | null
     setTimeout(handleGenerate, 50);
   }, [handleGenerate]);
 
-  // ── Handle refined result ───────────────────────────────────────────────────
   const handleRefined = useCallback(async (refinedResult: GenerationResult) => {
     setResult(refinedResult);
     if (result?.projectId) {

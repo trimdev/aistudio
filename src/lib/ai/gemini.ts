@@ -10,7 +10,6 @@ import {
   type Part,
 } from "@google/generative-ai";
 
-// ─── EXACT system prompt ──────────────────────────────────────────────────────
 // Do NOT modify a single word – clients depend on this exact output.
 export const GHOST_MANNEQUIN_SYSTEM_PROMPT = `You are a professional high-end fashion e-commerce product photographer and image editor.
 
@@ -97,8 +96,6 @@ ABSOLUTE RESTRICTIONS:
 
 This must look like a premium fashion webshop product image ready for upload.`;
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-
 export interface GhostMannequinImageResult {
   imageBuffer: Buffer;
   mimeType: string;
@@ -106,15 +103,11 @@ export interface GhostMannequinImageResult {
   outputTokens: number;
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
 function resolveApiKey(clientKey?: string | null): string {
   const key = (clientKey || process.env.GEMINI_API_KEY)?.trim();
   if (!key) throw new Error("No API key configured");
   return key;
 }
-
-// ─── Core generation function ─────────────────────────────────────────────────
 
 /**
  * Generate a ghost mannequin composite image from 2-3 garment photos.
@@ -171,11 +164,9 @@ export async function generateGhostMannequin(
   });
 
   const parts = result.response.candidates?.[0]?.content?.parts ?? [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const imgPart = parts.find((p: any) => p.inlineData?.data);
+  const imgPart = parts.find((p: Part) => p.inlineData?.data);
 
   if (!imgPart || !("inlineData" in imgPart) || !imgPart.inlineData?.data) {
-    // Surface the raw text response in the error so we can debug
     const textPart = parts.find((p) => "text" in p);
     const detail = textPart && "text" in textPart ? textPart.text : "No image returned";
     throw new Error(`AI did not return an image. Details: ${detail}`);
@@ -184,7 +175,7 @@ export async function generateGhostMannequin(
   const usage = result.response.usageMetadata;
   return {
     imageBuffer: Buffer.from(imgPart.inlineData.data, "base64"),
-    mimeType: (imgPart.inlineData.mimeType as string) || "image/png",
+    mimeType: imgPart.inlineData.mimeType || "image/png",
     inputTokens: usage?.promptTokenCount ?? 0,
     outputTokens: usage?.candidatesTokenCount ?? 0,
   };
@@ -281,8 +272,7 @@ User's refinement request: ${feedback.trim()}`;
   });
 
   const parts = result.response.candidates?.[0]?.content?.parts ?? [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const imgPart = parts.find((p: any) => p.inlineData?.data);
+  const imgPart = parts.find((p: Part) => p.inlineData?.data);
 
   if (!imgPart || !("inlineData" in imgPart) || !imgPart.inlineData?.data) {
     const textPart = parts.find((p) => "text" in p);
@@ -293,13 +283,11 @@ User's refinement request: ${feedback.trim()}`;
   const usage = result.response.usageMetadata;
   return {
     imageBuffer: Buffer.from(imgPart.inlineData.data, "base64"),
-    mimeType: (imgPart.inlineData.mimeType as string) || "image/png",
+    mimeType: imgPart.inlineData.mimeType || "image/png",
     inputTokens: usage?.promptTokenCount ?? 0,
     outputTokens: usage?.candidatesTokenCount ?? 0,
   };
 }
-
-// ─── Model photo — single-image prompts ──────────────────────────────────────
 
 const SINGLE_PHOTO_BASE = (hairColor: string, hairDesc: string) =>
   `Generate a professional high-end fashion editorial photograph.
@@ -345,8 +333,6 @@ Medium format camera, 85mm focal length.`;
 export const BLONDE_SINGLE_PROMPT  = SINGLE_PHOTO_BASE("blonde",   "straight or wavy blonde hair, shoulder length or longer");
 export const BRUNETTE_SINGLE_PROMPT = SINGLE_PHOTO_BASE("brunette", "straight or wavy dark brown hair, shoulder length or longer");
 
-// ─── Pose / scene catalogues (indexed by poseIndex) ──────────────────────────
-
 export const PHOTO_POSES: Record<"photoshoot" | "lifestyle", string[]> = {
   photoshoot: [
     "Standing tall, arms naturally relaxed at sides, facing directly toward camera, full body, pure white seamless studio backdrop, soft even diffused studio lighting, zero shadows.",
@@ -369,8 +355,6 @@ export const PHOTO_POSES: Record<"photoshoot" | "lifestyle", string[]> = {
     "Outdoor setting bathed in warm golden-hour sunlight, long soft shadows on the ground, warm amber and orange tones in background, full body.",
   ],
 };
-
-// ─── Single-photo prompt builder ─────────────────────────────────────────────
 
 function buildSinglePhotoPrompt(
   variant: "blonde" | "brunette",
@@ -469,14 +453,13 @@ export async function generateModelPhoto(
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const result = await model.generateContent(requestWithRef);
     const parts  = result.response.candidates?.[0]?.content?.parts ?? [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const imgPart = parts.find((p: any) => p.inlineData?.data);
+    const imgPart = parts.find((p: Part) => p.inlineData?.data);
 
     if (imgPart && "inlineData" in imgPart && imgPart.inlineData?.data) {
       const usage = result.response.usageMetadata;
       return {
         imageBuffer: Buffer.from(imgPart.inlineData.data, "base64"),
-        mimeType: (imgPart.inlineData.mimeType as string) || "image/png",
+        mimeType: imgPart.inlineData.mimeType || "image/png",
         inputTokens: usage?.promptTokenCount ?? 0,
         outputTokens: usage?.candidatesTokenCount ?? 0,
       };
@@ -500,14 +483,13 @@ export async function generateModelPhoto(
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       const result = await model.generateContent(requestWithoutRef);
       const parts  = result.response.candidates?.[0]?.content?.parts ?? [];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const imgPart = parts.find((p: any) => p.inlineData?.data);
+      const imgPart = parts.find((p: Part) => p.inlineData?.data);
 
       if (imgPart && "inlineData" in imgPart && imgPart.inlineData?.data) {
         const usage = result.response.usageMetadata;
         return {
           imageBuffer: Buffer.from(imgPart.inlineData.data, "base64"),
-          mimeType: (imgPart.inlineData.mimeType as string) || "image/png",
+          mimeType: imgPart.inlineData.mimeType || "image/png",
           inputTokens: usage?.promptTokenCount ?? 0,
           outputTokens: usage?.candidatesTokenCount ?? 0,
         };
@@ -528,8 +510,6 @@ export async function generateModelPhoto(
   // Unreachable — satisfies TypeScript
   throw new Error("generateModelPhoto: unexpected exit from retry loop");
 }
-
-// ─── Agent chat function ─────────────────────────────────────────────────────
 
 export interface AgentMessage {
   role: "user" | "model";
@@ -564,8 +544,6 @@ export async function agentChat(
   const result = await chat.sendMessage(lastMessage.text);
   return result.response.text();
 }
-
-// ─── Design model photo generation ───────────────────────────────────────────
 
 /**
  * Generate a design model fashion photo from garment reference images.
@@ -633,14 +611,13 @@ export async function generateDesignModelPhoto(
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const result = await geminiModel.generateContent(request);
     const parts  = result.response.candidates?.[0]?.content?.parts ?? [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const imgPart = parts.find((p: any) => p.inlineData?.data);
+    const imgPart = parts.find((p: Part) => p.inlineData?.data);
 
     if (imgPart && "inlineData" in imgPart && imgPart.inlineData?.data) {
       const usage = result.response.usageMetadata;
       return {
         imageBuffer: Buffer.from(imgPart.inlineData.data, "base64"),
-        mimeType: (imgPart.inlineData.mimeType as string) || "image/png",
+        mimeType: imgPart.inlineData.mimeType || "image/png",
         inputTokens: usage?.promptTokenCount ?? 0,
         outputTokens: usage?.candidatesTokenCount ?? 0,
       };
@@ -656,14 +633,13 @@ export async function generateDesignModelPhoto(
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       const result = await geminiModel.generateContent(requestWithoutPortrait);
       const parts  = result.response.candidates?.[0]?.content?.parts ?? [];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const imgPart = parts.find((p: any) => p.inlineData?.data);
+      const imgPart = parts.find((p: Part) => p.inlineData?.data);
 
       if (imgPart && "inlineData" in imgPart && imgPart.inlineData?.data) {
         const usage = result.response.usageMetadata;
         return {
           imageBuffer: Buffer.from(imgPart.inlineData.data, "base64"),
-          mimeType: (imgPart.inlineData.mimeType as string) || "image/png",
+          mimeType: imgPart.inlineData.mimeType || "image/png",
           inputTokens: usage?.promptTokenCount ?? 0,
           outputTokens: usage?.candidatesTokenCount ?? 0,
         };
@@ -685,8 +661,6 @@ export async function generateDesignModelPhoto(
   // Unreachable — satisfies TypeScript
   throw new Error("generateDesignModelPhoto: unexpected exit from retry loop");
 }
-
-// ─── Fashion Video Generation (Veo 2 image-to-video) ─────────────────────────
 
 export interface FashionVideoResult {
   videoBuffer: Buffer;
@@ -718,19 +692,14 @@ export async function generateFashionVideo(
   const apiKey = resolveApiKey(clientApiKey);
   const BASE = "https://generativelanguage.googleapis.com/v1beta";
 
-  // Use the front image as the source for image-to-video
   const imageBase64 = imageBuffers.front.toString("base64");
-
-  // Prompt for Veo — animating an existing image, NOT generating new people
   const videoPrompt = promptDescription;
 
-  // Map aspect ratio format
   const aspectRatio = options?.aspectRatio || "9:16";
   // Veo 3.1 supports 4s, 6s, or 8s — pick closest
   const rawDuration = options?.durationSeconds || 6;
   const durationSeconds = rawDuration <= 4 ? 4 : rawDuration <= 6 ? 6 : 8;
 
-  // Submit video generation request to Veo 3.1
   const generateRes = await fetch(
     `${BASE}/models/veo-3.1-generate-preview:predictLongRunning?key=${apiKey}`,
     {
@@ -792,12 +761,10 @@ export async function generateFashionVideo(
     const pollData = await pollRes.json();
 
     if (pollData.done) {
-      // Check for error
       if (pollData.error) {
         throw new Error(`Veo generation failed: ${pollData.error.message || JSON.stringify(pollData.error)}`);
       }
 
-      // Extract video from response
       const response = pollData.response ?? pollData.result ?? pollData;
       const videos = response?.generateVideoResponse?.generatedSamples
         ?? response?.generatedVideos
@@ -859,8 +826,6 @@ export async function generateFashionVideo(
 
   throw new Error("Veo video generation timed out after 5 minutes.");
 }
-
-// ─── Model metadata ───────────────────────────────────────────────────────────
 
 export const MODEL_INFO = {
   id: "gemini-2.5-flash-image",

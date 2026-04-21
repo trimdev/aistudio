@@ -11,8 +11,6 @@ import {
 } from "@google/generative-ai";
 import { FURNITURE_SCENES, type FurnitureScene } from "@/lib/furniture-scenes";
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
 function resolveApiKey(clientKey?: string | null): string {
   const key = (clientKey || process.env.GEMINI_API_KEY)?.trim();
   if (!key) throw new Error("No API key configured");
@@ -38,8 +36,6 @@ export interface FurnitureImageResult {
   inputTokens: number;
   outputTokens: number;
 }
-
-// ─── Ghost Shot prompt ────────────────────────────────────────────────────────
 
 const FURNITURE_GHOST_PROMPT = `You are a professional product photographer and photo editor specialising in high-end furniture and interior design e-commerce.
 
@@ -71,12 +67,8 @@ RESTRICTIONS:
 
 The output must look like a premium furniture e-commerce product image ready for a webshop.`;
 
-// ─── Lifestyle scene catalogue ────────────────────────────────────────────────
-
 export type { FurnitureScene } from "@/lib/furniture-scenes";
 export { FURNITURE_SCENES } from "@/lib/furniture-scenes";
-
-// ─── Lifestyle prompt builder ─────────────────────────────────────────────────
 
 function buildLifestylePrompt(scene: FurnitureScene, withPeople: boolean): string {
   const peopleInstruction = withPeople
@@ -109,8 +101,6 @@ TECHNICAL REQUIREMENTS:
 OUTPUT: One single photograph. Not a collage, not a mood board — one seamless, photorealistic image.`;
 }
 
-// ─── Core generation functions ────────────────────────────────────────────────
-
 /**
  * Generate a clean white-background product photo of a furniture piece.
  */
@@ -131,8 +121,7 @@ export async function generateFurnitureGhostShot(
   });
 
   const parts   = result.response.candidates?.[0]?.content?.parts ?? [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const imgPart = parts.find((p: any) => p.inlineData?.data);
+  const imgPart = parts.find((p: Part) => p.inlineData?.data);
 
   if (!imgPart || !("inlineData" in imgPart) || !imgPart.inlineData?.data) {
     const textPart = parts.find((p) => "text" in p);
@@ -143,7 +132,7 @@ export async function generateFurnitureGhostShot(
   const usage = result.response.usageMetadata;
   return {
     imageBuffer:  Buffer.from(imgPart.inlineData.data, "base64"),
-    mimeType:     (imgPart.inlineData.mimeType as string) || "image/png",
+    mimeType:     imgPart.inlineData.mimeType || "image/png",
     inputTokens:  usage?.promptTokenCount     ?? 0,
     outputTokens: usage?.candidatesTokenCount ?? 0,
   };
@@ -175,14 +164,13 @@ export async function generateFurnitureLifestyle(
       contents: [{ role: "user", parts: [...imageParts, { text: prompt }] }],
     });
     const parts    = result.response.candidates?.[0]?.content?.parts ?? [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const imgPart  = parts.find((p: any) => p.inlineData?.data);
+    const imgPart  = parts.find((p: Part) => p.inlineData?.data);
 
     if (imgPart && "inlineData" in imgPart && imgPart.inlineData?.data) {
       const usage = result.response.usageMetadata;
       return {
         imageBuffer:  Buffer.from(imgPart.inlineData.data, "base64"),
-        mimeType:     (imgPart.inlineData.mimeType as string) || "image/png",
+        mimeType:     imgPart.inlineData.mimeType || "image/png",
         inputTokens:  usage?.promptTokenCount     ?? 0,
         outputTokens: usage?.candidatesTokenCount ?? 0,
       };

@@ -7,9 +7,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/components/providers/LanguageProvider";
 import { toast } from "sonner";
+import { downloadFile } from "@/lib/image-utils";
 import type { UploadedImages, UploadedPreviews, GenerationStep, GenerationResult, ProjectVersionWithUrl } from "@/types";
 
-// ─── Step config ──────────────────────────────────────────────────────────────
 const STEP_KEYS = [
   { key: "uploading" as GenerationStep, label_key: "step_uploading" as const },
   { key: "analyzing" as GenerationStep, label_key: "step_analyzing" as const },
@@ -23,29 +23,11 @@ const STEP_ORDER: GenerationStep[] = ["uploading","analyzing","removing","preser
 
 function stepIndex(step: GenerationStep) { return STEP_ORDER.indexOf(step); }
 
-async function downloadFile(url: string, filename: string) {
-  try {
-    const blob = await fetch(url).then((r) => r.blob());
-    const blobUrl = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = blobUrl; a.download = filename;
-    document.body.appendChild(a); a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(blobUrl);
-  } catch {
-    const a = document.createElement("a");
-    a.href = url; a.download = filename;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  }
-}
-
 function formatHuDate(dateStr: string): string {
   const d = new Date(dateStr);
   const pad = (n: number) => n.toString().padStart(2, "0");
   return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())}. ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
-
-// ─── Sub-views ────────────────────────────────────────────────────────────────
 
 function EmptyState() {
   const { t } = useLanguage();
@@ -144,8 +126,6 @@ function LoadingState({ step }: { step: GenerationStep }) {
   );
 }
 
-// ─── History Panel ────────────────────────────────────────────────────────────
-
 interface HistoryPanelProps {
   versions: ProjectVersionWithUrl[];
   activeVersionIndex: number;
@@ -208,8 +188,6 @@ function HistoryPanel({ versions, activeVersionIndex, onSelectVersion }: History
     </div>
   );
 }
-
-// ─── Refinement Panel ────────────────────────────────────────────────────────
 
 interface RefinementPanelProps {
   projectId: string;
@@ -393,8 +371,6 @@ function RefinementPanel({ projectId, onRefined, annotationBlob, onClearAnnotati
     </div>
   );
 }
-
-// ─── Result View ──────────────────────────────────────────────────────────────
 
 interface ResultViewProps {
   result: GenerationResult;
@@ -627,13 +603,12 @@ function ErrorState({ message }: { message: string }) {
       </div>
       <div className="text-center">
         <p className="text-base font-semibold text-gray-900">Generálás sikertelen</p>
-        <p className="text-sm text-gray-500 mt-2 max-w-[260px] leading-relaxed">{message}</p>
+        <p className="text-sm text-gray-500 mt-2 max-w-[260px] leading-relaxed break-all">{message}</p>
       </div>
     </div>
   );
 }
 
-// ─── Main ────────────────────────────────────────────────────────────────────
 
 interface PreviewPanelProps {
   images: UploadedImages;

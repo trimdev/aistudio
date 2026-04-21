@@ -1,8 +1,6 @@
 // Shared constants for the Video Generation Studio feature.
 // Used by both the UI (VideoGenerationTool) and the API route (generate-video).
 
-// ─── Motion Styles ───────────────────────────────────────────────────────────
-
 export interface MotionStyle {
   id: string;
   name: string;
@@ -117,8 +115,6 @@ export const MOTION_STYLES: MotionStyle[] = [
   },
 ];
 
-// ─── Camera Angles ───────────────────────────────────────────────────────────
-
 export interface CameraAngle {
   id: string;
   name: string;
@@ -137,8 +133,6 @@ export const CAMERA_ANGLES: CameraAngle[] = [
   { id: "over-shoulder", name: "Over Shoulder", description_hu: "Váll fölötti", promptDescription: "over-the-shoulder perspective, depth of field, detail focus", icon: "👁" },
   { id: "orbiting", name: "Orbiting", description_hu: "Keringő", promptDescription: "camera orbiting around subject, smooth circular motion, all-around view", icon: "🔁" },
 ];
-
-// ─── Music Moods ─────────────────────────────────────────────────────────────
 
 export interface MusicMood {
   id: string;
@@ -159,8 +153,6 @@ export const MUSIC_MOODS: MusicMood[] = [
   { id: "hip-hop-trap", name: "Hip-Hop / Trap", description_hu: "Hip-Hop / Trap", bpm: "130–160", genre: "Hip-Hop", gradient: "from-red-500 to-orange-600" },
   { id: "lofi-chill", name: "Lo-Fi Chill", description_hu: "Lo-Fi nyugis", bpm: "80–100", genre: "Lo-Fi", gradient: "from-green-500 to-teal-600" },
 ];
-
-// ─── Video Templates ─────────────────────────────────────────────────────────
 
 export interface VideoTemplate {
   id: string;
@@ -257,8 +249,6 @@ export const VIDEO_TEMPLATES: VideoTemplate[] = [
   },
 ];
 
-// ─── Aspect Ratios ───────────────────────────────────────────────────────────
-
 export interface AspectRatio {
   id: "9:16" | "16:9" | "1:1" | "4:5";
   name: string;
@@ -274,8 +264,6 @@ export const ASPECT_RATIOS: AspectRatio[] = [
   { id: "1:1", name: "Square (1:1)", description_hu: "Négyzet", width: 1080, height: 1080, useCase: "Instagram Feed, Product Page" },
   { id: "4:5", name: "Portrait (4:5)", description_hu: "Portré", width: 1080, height: 1350, useCase: "Instagram Feed, Pinterest" },
 ];
-
-// ─── Branding Options ────────────────────────────────────────────────────────
 
 export interface BrandingPosition {
   id: string;

@@ -8,7 +8,6 @@ import {
   RotateCcw, Zap, ArrowLeft,
 } from "lucide-react";
 
-// ─── Types ───────────────────────────────────────────────────────────────────
 
 interface Model {
   id: string;
@@ -29,7 +28,6 @@ interface Background {
   dot: string;
 }
 
-// ─── Data ────────────────────────────────────────────────────────────────────
 
 const MODELS: Model[] = [
   { id: "m1", name: "Aria",    tag: "Editorial",  bodyType: "Slim",     skin: "Fair",   gradient: "from-rose-900/60 via-stone-800 to-stone-900",   highlight: "border-rose-400",    letter: "A" },
@@ -61,7 +59,6 @@ const BACKGROUNDS: Background[] = [
   { id: "rooftop",    label: "Rooftop",         sub: "City skyline",        gradient: "from-indigo-700 to-slate-900",         dot: "bg-indigo-400"  },
 ];
 
-// ─── Step indicator ───────────────────────────────────────────────────────────
 
 const STEPS = ["Select Model", "Add Garment", "Background", "Generate"];
 
@@ -105,7 +102,6 @@ function StepBar({ current }: { current: number }) {
   );
 }
 
-// ─── Step 1 — Model selection ────────────────────────────────────────────────
 
 function StepModel({ selected, onSelect }: { selected: string | null; onSelect: (id: string) => void }) {
   const [filter, setFilter] = useState<FilterTab>("All");
@@ -201,7 +197,6 @@ function StepModel({ selected, onSelect }: { selected: string | null; onSelect: 
   );
 }
 
-// ─── Step 2 — Garment upload ──────────────────────────────────────────────────
 
 function StepGarment({
   file, onFile, accessories, onToggleAccessory
@@ -292,7 +287,6 @@ function StepGarment({
   );
 }
 
-// ─── Step 3 — Background ──────────────────────────────────────────────────────
 
 function StepBackground({ selected, onSelect }: { selected: string | null; onSelect: (id: string) => void }) {
   return (
@@ -333,7 +327,6 @@ function StepBackground({ selected, onSelect }: { selected: string | null; onSel
   );
 }
 
-// ─── Step 4 — Generate ────────────────────────────────────────────────────────
 
 function StepGenerate({
   model, garment, background, accessories, onReset
@@ -497,7 +490,6 @@ function StepGenerate({
   );
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
 
 export function BotikaModelBuilder() {
   const [step, setStep]             = useState(0);

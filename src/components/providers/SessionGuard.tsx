@@ -16,7 +16,6 @@ export function SessionGuard() {
     const stillActive = sessionStorage.getItem("gs-temp-session");
 
     if (wasTemp && !stillActive) {
-      // Browser was restarted / all tabs closed — enforce sign-out
       localStorage.removeItem("gs-temp-user");
       const supabase = getSupabaseBrowserClient();
       supabase.auth.signOut().then(() => router.push("/login"));

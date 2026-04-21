@@ -5,36 +5,17 @@ import { createProject, updateProject, getProject } from "@/lib/projects";
 import { uploadOutputImage, getSignedUrl } from "@/lib/storage";
 import { createVersion } from "@/lib/versions";
 import { getServerUser, createSupabaseAdminClient } from "@/lib/supabase/server";
+import { normalizeMime } from "@/lib/api/mime";
+import { checkRateLimit } from "@/lib/api/rate-limit";
+import { ALLOWED_IMAGE_TYPES, MAX_FILE_SIZE } from "@/lib/api/constants";
 
 export const maxDuration = 300;
-
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
-const RATE_LIMIT = 100;
-const RATE_WINDOW_MS = 60 * 60 * 1000;
-
-function checkRateLimit(userId: string): { allowed: boolean; remaining: number } {
-  const now = Date.now();
-  const entry = rateLimitMap.get(userId);
-  if (!entry || entry.resetAt < now) {
-    rateLimitMap.set(userId, { count: 1, resetAt: now + RATE_WINDOW_MS });
-    return { allowed: true, remaining: RATE_LIMIT - 1 };
-  }
-  if (entry.count >= RATE_LIMIT) return { allowed: false, remaining: 0 };
-  entry.count++;
-  return { allowed: true, remaining: RATE_LIMIT - entry.count };
-}
-
-function normalizeMime(type: string): string {
-  const base = type.split(";")[0].trim().toLowerCase();
-  if (base === "image/jpg" || base === "image/pjpeg") return "image/jpeg";
-  return base;
-}
 
 export async function POST(req: NextRequest) {
   const user = await getServerUser();
   if (!user) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
 
-  const { allowed, remaining } = checkRateLimit(user.id);
+  const { allowed, remaining } = checkRateLimit(user.id, 100, "generate-model");
   if (!allowed) {
     return NextResponse.json(
       { error: "Rate limit exceeded. Up to 10 model generations per hour." },
@@ -72,15 +53,14 @@ export async function POST(req: NextRequest) {
   // Validate uploaded files only when they are provided (not ghost path)
   if (!ghostProjectId) {
     const allFiles = [frontFile!, backFile!, ...(sideFile ? [sideFile] : [])];
-    const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
     for (const file of allFiles) {
-      if (!allowedTypes.includes(file.type)) {
+      if (!ALLOWED_IMAGE_TYPES.includes(file.type as typeof ALLOWED_IMAGE_TYPES[number])) {
         return NextResponse.json(
           { error: `Unsupported file type: ${file.type}. Use JPG, PNG, or WebP.` },
           { status: 400 }
         );
       }
-      if (file.size > 10 * 1024 * 1024) {
+      if (file.size > MAX_FILE_SIZE) {
         return NextResponse.json({ error: `${file.name} exceeds 10 MB.` }, { status: 400 });
       }
     }
@@ -214,7 +194,7 @@ export async function POST(req: NextRequest) {
   } catch (err: unknown) {
     console.error("[generate-model]", err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Model generation failed" },
+      { error: err instanceof Error ? (err.name !== "Error" ? err.toString() : err.message) : String(err) },
       { status: 500 }
     );
   }

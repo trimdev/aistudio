@@ -9,40 +9,17 @@ import { getServerUser } from "@/lib/supabase/server";
 import { listWorkspaceMemories } from "@/lib/workspace-memory";
 import { buildMemoryPromptBlock } from "@/lib/memory-utils";
 import { createCollection, touchCollection } from "@/lib/collections";
-import { appendFileSync } from "fs";
-
-function dbg(...args: unknown[]) {
-  const line = `[generate ${new Date().toISOString()}] ${args.map(a => typeof a === "object" ? JSON.stringify(a) : String(a)).join(" ")}\n`;
-  process.stdout.write(line);
-  try { appendFileSync("/tmp/generate-debug.log", line); } catch { /* ignore */ }
-}
+import { normalizeMime } from "@/lib/api/mime";
+import { checkRateLimit } from "@/lib/api/rate-limit";
+import { ALLOWED_IMAGE_TYPES, MAX_FILE_SIZE } from "@/lib/api/constants";
 
 export const maxDuration = 300;
 
-// ─── Rate limiting ────────────────────────────────────────────────────────────
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
-const RATE_LIMIT = 20;
-const RATE_WINDOW_MS = 60 * 60 * 1000;
-
-function checkRateLimit(userId: string): { allowed: boolean; remaining: number } {
-  const now = Date.now();
-  const entry = rateLimitMap.get(userId);
-  if (!entry || entry.resetAt < now) {
-    rateLimitMap.set(userId, { count: 1, resetAt: now + RATE_WINDOW_MS });
-    return { allowed: true, remaining: RATE_LIMIT - 1 };
-  }
-  if (entry.count >= RATE_LIMIT) return { allowed: false, remaining: 0 };
-  entry.count++;
-  return { allowed: true, remaining: RATE_LIMIT - entry.count };
-}
-
-// ─── Handler ──────────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   const user = await getServerUser();
-  dbg("POST /api/generate received, user:", user?.id ?? "null");
   if (!user) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
 
-  const { allowed, remaining } = checkRateLimit(user.id);
+  const { allowed, remaining } = checkRateLimit(user.id, 20, "generate");
   if (!allowed) {
     return NextResponse.json(
       { error: "Rate limit exceeded. Up to 20 generations per hour." },
@@ -63,25 +40,17 @@ export async function POST(req: NextRequest) {
   }
 
   const allFiles = [frontFile, backFile, ...(sideFile ? [sideFile] : [])];
-  const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
 
   for (const file of allFiles) {
-    if (!allowedTypes.includes(file.type)) {
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type as typeof ALLOWED_IMAGE_TYPES[number])) {
       return NextResponse.json(
         { error: `Unsupported file type: ${file.type}. Use JPG, PNG, or WebP.` },
         { status: 400 }
       );
     }
-    if (file.size > 10 * 1024 * 1024) {
+    if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json({ error: `${file.name} exceeds 10 MB.` }, { status: 400 });
     }
-  }
-
-  function normalizeMime(type: string): string {
-    // Gemini API only accepts image/jpeg, image/png, image/webp — strip params and normalize
-    const base = type.split(";")[0].trim().toLowerCase();
-    if (base === "image/jpg" || base === "image/pjpeg") return "image/jpeg";
-    return base;
   }
 
   const workspace = await getEffectiveWorkspace();
@@ -129,9 +98,7 @@ export async function POST(req: NextRequest) {
         inputPaths.push(path);
       }
       await updateProject(project.id, { input_images: inputPaths });
-    } catch (uploadErr) {
-      dbg("uploadInputs failed (non-fatal):", uploadErr instanceof Error ? uploadErr.message : String(uploadErr));
-    }
+    } catch { /* non-fatal */ }
 
     // Load workspace memories and build prompt
     _step = "loadMemories";
@@ -143,14 +110,12 @@ export async function POST(req: NextRequest) {
 
     // Generate image
     _step = "geminiGenerate";
-    dbg("mimeTypes sent to Gemini:", mimeTypes);
     const { imageBuffer, mimeType: rawMimeType, inputTokens, outputTokens } = await generateGhostMannequin(
       buffers,
       mimeTypes,
       workspace?.gemini_api_key,
       effectiveRefinePrompt
     );
-    dbg("Gemini rawMimeType:", rawMimeType);
     // Normalize Gemini's output mimeType — it can include parameters or non-standard values
     const mimeType = normalizeMime(rawMimeType);
 
@@ -191,10 +156,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ projectId: project.id, collectionId: resolvedCollectionId, outputUrl, outputPath, mimeType, versionNumber: version.version_number, rateLimitRemaining: remaining });
   } catch (err: unknown) {
     await updateProject(project.id, { status: "failed" }).catch(() => {});
-    dbg(`FAILED at step="${_step}"`, err instanceof Error ? err.message : String(err));
-    if (err instanceof Error) dbg("stack:", err.stack ?? "no stack");
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Generation failed" },
+      { error: err instanceof Error ? (err.name !== "Error" ? err.toString() : err.message) : String(err) },
       { status: 500 }
     );
   }

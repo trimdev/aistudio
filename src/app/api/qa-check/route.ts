@@ -26,10 +26,16 @@ OTHER DEFECTS TO CHECK:
 - Color shifts or unnatural saturation
 - Layout issues (not side-by-side, misaligned views)
 
+For EACH issue found, also provide a bounding box showing WHERE in the image the issue is located.
+Use normalized coordinates [ymin, xmin, ymax, xmax] where each value is 0–1000 (0 = top/left edge, 1000 = bottom/right edge).
+
 Respond in EXACTLY this JSON format (no markdown, no code fences):
 {
   "pass": true/false,
   "issues": ["issue 1 description", "issue 2 description"],
+  "regions": [
+    {"bbox": [ymin, xmin, ymax, xmax], "label": "short description of what is wrong here"}
+  ],
   "severity": "ok" | "warning" | "critical",
   "summary": "One sentence summary in Hungarian"
 }
@@ -39,6 +45,7 @@ Rules:
 - "pass" can be true even with minor warnings (slight background issues, etc.)
 - "severity" is "critical" if mannequin is visible, "warning" for minor issues, "ok" if clean
 - Keep issue descriptions short and specific (e.g. "Mannequin neck form visible at collar area")
+- "regions" must contain one entry per issue, with a tight bounding box around the defect area. If no issues, return an empty array.
 - Summary must be in Hungarian
 - If you also receive workspace memory notes, use them as additional QA criteria`;
 

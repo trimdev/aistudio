@@ -4,6 +4,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import { Upload, X, ImageIcon, Loader2, Download, RotateCcw, Wand2, Users, UserX } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { compressImage } from "@/lib/image-utils";
 import { FURNITURE_SCENES, type FurnitureScene } from "@/lib/furniture-scenes";
 
 type Step = "idle" | "uploading" | "compositing" | "rendering" | "finalizing" | "done" | "error";
@@ -43,31 +44,6 @@ function SceneCard({ scene, selected, onClick }: { scene: FurnitureScene; select
       {scene.label}
     </button>
   );
-}
-
-async function compressImage(file: File, maxMB = 1.5, maxPx = 1920): Promise<File> {
-  return new Promise((resolve) => {
-    if (file.size <= maxMB * 1024 * 1024) { resolve(file); return; }
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      let { naturalWidth: w, naturalHeight: h } = img;
-      if (w > maxPx || h > maxPx) { const r = Math.min(maxPx / w, maxPx / h); w = Math.round(w * r); h = Math.round(h * r); }
-      const canvas = document.createElement("canvas");
-      canvas.width = w; canvas.height = h;
-      canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
-      let quality = 0.85;
-      const attempt = () => canvas.toBlob((blob) => {
-        if (!blob) { resolve(file); return; }
-        if (blob.size > maxMB * 1024 * 1024 && quality > 0.45) { quality = Math.round((quality - 0.1) * 10) / 10; attempt(); }
-        else resolve(new File([blob], file.name, { type: "image/jpeg" }));
-      }, "image/jpeg", quality);
-      attempt();
-    };
-    img.onerror = () => resolve(file);
-    img.src = url;
-  });
 }
 
 export function FurnitureLifestyleTool({ collectionId, ghostProjectId }: Props) {

@@ -154,17 +154,18 @@ export default function SettingsPage() {
   const [modelRefs, setModelRefs] = useState<ModelRefs>({ blonde: null, brunette: null });
 
   useEffect(() => {
-    fetch("/api/settings")
-      .then((r) => r.json())
-      .then((data: Settings) => {
-        setSettings(data);
-        setWorkspaceName(data.workspaceName);
-      });
+    (async () => {
+      const settingsRes = await fetch("/api/settings");
+      const data: Settings = await settingsRes.json();
+      setSettings(data);
+      setWorkspaceName(data.workspaceName);
 
-    fetch("/api/settings/model-refs")
-      .then((r) => r.json())
-      .then((data: ModelRefs) => setModelRefs(data))
-      .catch(() => {});
+      try {
+        const refsRes = await fetch("/api/settings/model-refs");
+        const refs: ModelRefs = await refsRes.json();
+        setModelRefs(refs);
+      } catch { /* non-critical */ }
+    })();
   }, []);
 
   const save = async () => {

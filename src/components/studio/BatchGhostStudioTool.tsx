@@ -10,13 +10,20 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { compressImage, downloadFile } from "@/lib/image-utils";
 import JSZip from "jszip";
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// Types
+
+interface QaRegion {
+  bbox: [number, number, number, number]; // [ymin, xmin, ymax, xmax] normalized 0-1000
+  label: string;
+}
 
 interface QaResult {
   pass: boolean;
   issues: string[];
+  regions?: QaRegion[];
   severity: "ok" | "warning" | "critical";
   summary: string;
 }
@@ -29,7 +36,7 @@ interface BatchProduct {
   front: File;
   back: File;
   side: File | null;
-  status: "pending" | "processing" | "completed" | "failed" | "skipped";
+  status: "pending" | "processing" | "fixing" | "completed" | "failed" | "skipped";
   error?: string;
   projectId?: string;
   outputUrl?: string;
@@ -39,8 +46,6 @@ interface BatchProduct {
 }
 
 type BatchStatus = "idle" | "processing" | "done";
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function classifyFile(name: string): "front" | "back" | "side" | null {
   const n = name.toLowerCase().replace(/[^a-z0-9áéíóöőúüű]/g, "");
@@ -118,58 +123,114 @@ function parseProducts(files: File[]): BatchProduct[] {
   return products;
 }
 
-async function compressImage(file: File, maxMB = 1.5, maxPx = 1920): Promise<File> {
-  return new Promise((resolve) => {
-    if (file.size <= maxMB * 1024 * 1024) { resolve(file); return; }
-    const img = new Image();
-    const blobUrl = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(blobUrl);
-      let { naturalWidth: w, naturalHeight: h } = img;
-      if (w > maxPx || h > maxPx) {
-        const r = Math.min(maxPx / w, maxPx / h);
-        w = Math.round(w * r);
-        h = Math.round(h * r);
+// QA check with retry
+
+const QA_MAX_RETRIES = 3;
+const QA_BASE_DELAY_MS = 4_000; // 4s, 8s, 12s backoff
+
+async function runQaWithRetry(blob: Blob): Promise<QaResult | undefined> {
+  for (let attempt = 1; attempt <= QA_MAX_RETRIES; attempt++) {
+    try {
+      const qaForm = new FormData();
+      qaForm.append("image", blob, "check.png");
+      const qaRes = await fetch("/api/qa-check", { method: "POST", body: qaForm });
+
+      if (qaRes.ok) {
+        return (await qaRes.json()) as QaResult;
       }
-      const canvas = document.createElement("canvas");
-      canvas.width = w; canvas.height = h;
-      canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
-      let quality = 0.85;
-      const attempt = () => {
-        canvas.toBlob((blob) => {
-          if (!blob) { resolve(file); return; }
-          if (blob.size > maxMB * 1024 * 1024 && quality > 0.45) {
-            quality = Math.round((quality - 0.1) * 10) / 10;
-            attempt();
-          } else {
-            resolve(new File([blob], file.name, { type: "image/jpeg" }));
-          }
-        }, "image/jpeg", quality);
-      };
-      attempt();
-    };
-    img.onerror = () => resolve(file);
-    img.src = blobUrl;
+
+      // Rate-limited or server error — wait and retry
+      if (qaRes.status === 429 || qaRes.status >= 500) {
+        if (attempt < QA_MAX_RETRIES) {
+          await new Promise((r) => setTimeout(r, QA_BASE_DELAY_MS * attempt));
+          continue;
+        }
+      }
+
+      // Non-retryable client error (4xx other than 429) — give up
+      return undefined;
+    } catch {
+      // Network error — wait and retry
+      if (attempt < QA_MAX_RETRIES) {
+        await new Promise((r) => setTimeout(r, QA_BASE_DELAY_MS * attempt));
+        continue;
+      }
+    }
+  }
+  return undefined;
+}
+
+async function generateAnnotationFromRegions(
+  imageBlob: Blob,
+  regions: QaRegion[]
+): Promise<Blob> {
+  const img = await createImageBitmap(imageBlob);
+  const canvas = document.createElement("canvas");
+  canvas.width = img.width;
+  canvas.height = img.height;
+  const ctx = canvas.getContext("2d")!;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  ctx.strokeStyle = "rgba(239, 68, 68, 0.85)";
+  ctx.lineWidth = Math.max(4, Math.round(Math.min(canvas.width, canvas.height) / 120));
+
+  for (const region of regions) {
+    const [ymin, xmin, ymax, xmax] = region.bbox;
+    const x1 = (xmin / 1000) * canvas.width;
+    const y1 = (ymin / 1000) * canvas.height;
+    const x2 = (xmax / 1000) * canvas.width;
+    const y2 = (ymax / 1000) * canvas.height;
+
+    const cx = (x1 + x2) / 2;
+    const cy = (y1 + y2) / 2;
+    const rx = Math.max(((x2 - x1) / 2) * 1.25, 20);
+    const ry = Math.max(((y2 - y1) / 2) * 1.25, 20);
+
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => resolve(blob!), "image/png");
   });
 }
 
-async function downloadFile(url: string, filename: string) {
+async function attemptAutoFix(
+  projectId: string,
+  imageBlob: Blob,
+  qa: QaResult
+): Promise<{ outputUrl: string; outputBlob: Blob; qa?: QaResult } | null> {
   try {
-    const blob = await fetch(url).then((r) => r.blob());
-    const blobUrl = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = blobUrl; a.download = filename;
-    document.body.appendChild(a); a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(blobUrl);
+    // Generate annotation overlay from QA bounding box regions
+    let annotationBlob: Blob | null = null;
+    if (qa.regions?.length) {
+      annotationBlob = await generateAnnotationFromRegions(imageBlob, qa.regions);
+    }
+
+    // Build feedback from QA issues
+    const feedback = `Automatikus QA javítás. Észlelt problémák:\n${qa.issues.map((i) => `- ${i}`).join("\n")}`;
+
+    const refineForm = new FormData();
+    refineForm.append("projectId", projectId);
+    refineForm.append("feedback", feedback);
+    if (annotationBlob) refineForm.append("annotation", annotationBlob, "annotation.png");
+
+    const refineRes = await fetch("/api/refine", { method: "POST", body: refineForm });
+    if (!refineRes.ok) return null;
+
+    const refineData = await refineRes.json();
+    const newOutputUrl = refineData.outputUrl as string;
+    const newBlob = await fetch(newOutputUrl).then((r) => r.blob());
+
+    // Re-run QA on the refined result (with retry)
+    const newQa = await runQaWithRetry(newBlob);
+
+    return { outputUrl: newOutputUrl, outputBlob: newBlob, qa: newQa };
   } catch {
-    const a = document.createElement("a");
-    a.href = url; a.download = filename;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    return null;
   }
 }
-
-// ─── Product Card ────────────────────────────────────────────────────────────
 
 function ProductCard({
   product, index, isSelected, onClick,
@@ -179,6 +240,7 @@ function ProductCard({
   const statusConfig = {
     pending:    { icon: Clock,        color: "text-gray-400",  bg: "bg-gray-50",  label: "Várakozik"    },
     processing: { icon: Loader2,      color: "text-amber-500", bg: "bg-amber-50", label: "Feldolgozás"  },
+    fixing:     { icon: Loader2,      color: "text-orange-500", bg: "bg-orange-50", label: "Javítás"    },
     completed:  { icon: CheckCircle2, color: "text-green-600", bg: "bg-green-50", label: "Kész"         },
     failed:     { icon: XCircle,      color: "text-red-500",   bg: "bg-red-50",   label: "Hiba"         },
     skipped:    { icon: AlertCircle,  color: "text-gray-400",  bg: "bg-gray-50",  label: "Kihagyva"     },
@@ -195,6 +257,7 @@ function ProductCard({
         "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all text-left",
         isSelected ? "border-gray-900 bg-gray-50 ring-1 ring-gray-900" :
         product.status === "processing" ? "border-amber-200 bg-amber-50/50" :
+        product.status === "fixing" ? "border-orange-200 bg-orange-50/50" :
         product.status === "completed" ? "border-green-200 bg-green-50/30 hover:border-green-300" :
         product.status === "failed" ? "border-red-200 bg-red-50/30 hover:border-red-300" :
         "border-gray-100 bg-white hover:border-gray-200"
@@ -221,10 +284,16 @@ function ProductCard({
             <span className="text-[11px] truncate">{product.qa.summary}</span>
           </div>
         )}
+        {!product.qa && product.status === "completed" && (
+          <div className="flex items-center gap-1 mt-0.5 text-gray-400">
+            <AlertCircle className="w-3 h-3" />
+            <span className="text-[11px]">QA nem futott</span>
+          </div>
+        )}
       </div>
       <div className="flex flex-col items-end gap-1 shrink-0">
         <div className={cn("flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-semibold", cfg.bg, cfg.color)}>
-          <StatusIcon className={cn("w-3.5 h-3.5", product.status === "processing" && "animate-spin")} />
+          <StatusIcon className={cn("w-3.5 h-3.5", (product.status === "processing" || product.status === "fixing") && "animate-spin")} />
           {cfg.label}
         </div>
         {product.saved && (
@@ -236,8 +305,6 @@ function ProductCard({
     </button>
   );
 }
-
-// ─── Product Detail View (annotation + refinement) ───────────────────────────
 
 function ProductDetailView({
   product,
@@ -349,20 +416,7 @@ function ProductDetailView({
     }, "image/png");
   };
 
-  // ── QA check ────────────────────────────────────────────────────────────────
-  const runQaCheck = useCallback(async (blob: Blob): Promise<QaResult | undefined> => {
-    try {
-      const qaForm = new FormData();
-      qaForm.append("image", blob, "check.png");
-      const qaRes = await fetch("/api/qa-check", { method: "POST", body: qaForm });
-      if (qaRes.ok) {
-        return await qaRes.json() as QaResult;
-      }
-    } catch {
-      // QA is best-effort — don't block on failure
-    }
-    return undefined;
-  }, []);
+  const runQaCheck = useCallback((blob: Blob) => runQaWithRetry(blob), []);
 
   const handleRefine = async () => {
     if (!feedback.trim() || isRefining || !product.projectId) return;
@@ -418,9 +472,31 @@ function ProductDetailView({
       // Run QA on regenerated result
       const qa = await runQaCheck(blob);
 
+      const projectId = data.projectId as string;
+
+      // Auto-fix if QA detected issues
+      if (qa && !qa.pass && projectId) {
+        onProductUpdated(product.id, { status: "fixing", qa });
+
+        const fixed = await attemptAutoFix(projectId, blob, qa);
+        if (fixed) {
+          onProductUpdated(product.id, {
+            status: "completed",
+            projectId,
+            outputUrl: fixed.outputUrl,
+            outputBlob: fixed.outputBlob,
+            error: undefined,
+            qa: fixed.qa,
+            saved: false,
+          });
+          toast.success(`${product.folderName} újragenerálva és automatikusan javítva!`);
+          return;
+        }
+      }
+
       onProductUpdated(product.id, {
         status: "completed",
-        projectId: data.projectId as string,
+        projectId,
         outputUrl,
         outputBlob: blob,
         error: undefined,
@@ -440,7 +516,6 @@ function ProductDetailView({
     toast.success(`${product.folderName} mentve!`);
   };
 
-  // ── Pending / Processing states ────────────────────────────────────────────
   if (product.status === "pending") {
     return (
       <div className="flex flex-col h-full">
@@ -472,6 +547,35 @@ function ProductDetailView({
     );
   }
 
+  if (product.status === "fixing") {
+    return (
+      <div className="flex flex-col h-full">
+        <DetailHeader product={product} onBack={onBack} />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center space-y-3">
+            <div className="w-16 h-16 rounded-2xl bg-orange-50 border border-orange-200 flex items-center justify-center animate-pulse mx-auto">
+              <ShieldAlert className="w-8 h-8 text-orange-400" />
+            </div>
+            <p className="text-sm font-semibold text-gray-700">Automatikus javítás...</p>
+            <p className="text-xs text-gray-400 max-w-[260px] leading-relaxed mx-auto">
+              A QA hibát talált, annotáció készül és a kép automatikusan javításra kerül.
+            </p>
+            {product.qa && product.qa.issues.length > 0 && (
+              <div className="mt-2 p-3 rounded-xl bg-orange-50 border border-orange-100 max-w-xs mx-auto text-left">
+                <p className="text-[11px] font-semibold text-orange-700 mb-1">Észlelt problémák:</p>
+                <ul className="space-y-0.5">
+                  {product.qa.issues.map((issue, i) => (
+                    <li key={i} className="text-[11px] text-orange-600">• {issue}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (product.status === "failed") {
     return (
       <div className="flex flex-col h-full">
@@ -495,7 +599,6 @@ function ProductDetailView({
     );
   }
 
-  // ── Completed — full result view ───────────────────────────────────────────
   return (
     <div className="flex flex-col h-full">
       <DetailHeader product={product} onBack={onBack} />
@@ -594,6 +697,16 @@ function ProductDetailView({
           </div>
         </div>
       )}
+      {!product.qa && (
+        <div className="shrink-0 border-t border-gray-200 bg-gray-50 px-5 py-2.5">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-gray-400 shrink-0" />
+            <p className="text-xs font-semibold text-gray-500">
+              QA ellenőrzés nem futott le — ellenőrizd manuálisan, vagy generáld újra.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Actions bar: download + regenerate + mentés */}
       <div className="shrink-0 border-t border-gray-100 bg-white px-5 py-3">
@@ -682,8 +795,6 @@ function DetailHeader({ product, onBack }: { product: BatchProduct; onBack: () =
   );
 }
 
-// ─── Main component ──────────────────────────────────────────────────────────
-
 export function BatchGhostStudioTool({ collectionId }: { collectionId?: string | null }) {
   const [products, setProducts] = useState<BatchProduct[]>([]);
   const [batchStatus, setBatchStatus] = useState<BatchStatus>("idle");
@@ -693,7 +804,6 @@ export function BatchGhostStudioTool({ collectionId }: { collectionId?: string |
   const folderInputRef = useRef<HTMLInputElement>(null);
   const batchCollectionIdRef = useRef<string | null>(collectionId ?? null);
 
-  // ── Parent folder required ─────────────────────────────────────────────────
   if (!collectionId) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -720,12 +830,10 @@ export function BatchGhostStudioTool({ collectionId }: { collectionId?: string |
 
   const selectedProduct = selectedProductId ? products.find((p) => p.id === selectedProductId) ?? null : null;
 
-  // ── Update product helper ──────────────────────────────────────────────────
   const updateProduct = useCallback((id: string, updates: Partial<BatchProduct>) => {
     setProducts((prev) => prev.map((p) => p.id === id ? { ...p, ...updates } : p));
   }, []);
 
-  // ── Folder selection ───────────────────────────────────────────────────────
   const handleFolderSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
     if (!fileList || fileList.length === 0) return;
@@ -744,8 +852,10 @@ export function BatchGhostStudioTool({ collectionId }: { collectionId?: string |
     e.target.value = "";
   }, [collectionId]);
 
-  // ── Process single product ─────────────────────────────────────────────────
-  const processProduct = useCallback(async (product: BatchProduct): Promise<Partial<BatchProduct>> => {
+  const processProduct = useCallback(async (
+    product: BatchProduct,
+    onStatusUpdate?: (updates: Partial<BatchProduct>) => void
+  ): Promise<Partial<BatchProduct> & { _autoFixed?: boolean }> => {
     const [cFront, cBack, cSide] = await Promise.all([
       compressImage(product.front),
       compressImage(product.back),
@@ -777,18 +887,41 @@ export function BatchGhostStudioTool({ collectionId }: { collectionId?: string |
     const outputUrl = data.outputUrl as string;
     const blob = await fetch(outputUrl).then((r) => r.blob());
 
-    // Run QA check on generated image
-    let qa: QaResult | undefined;
-    try {
-      const qaForm = new FormData();
-      qaForm.append("image", blob, "check.png");
-      const qaRes = await fetch("/api/qa-check", { method: "POST", body: qaForm });
-      if (qaRes.ok) qa = await qaRes.json() as QaResult;
-    } catch { /* QA is best-effort */ }
+    // Run QA check on generated image (with retry + backoff)
+    const qa = await runQaWithRetry(blob);
+
+    const projectId = data.projectId as string;
+
+    if (qa && !qa.pass && projectId) {
+      onStatusUpdate?.({ status: "fixing" as const, qa });
+
+      const fixed = await attemptAutoFix(projectId, blob, qa);
+      if (fixed) {
+        return {
+          status: "completed",
+          projectId,
+          outputUrl: fixed.outputUrl,
+          outputBlob: fixed.outputBlob,
+          qa: fixed.qa,
+          saved: false,
+          _autoFixed: true,
+        };
+      }
+      // Auto-fix failed — fall through with original result + QA issues
+      return {
+        status: "completed",
+        projectId,
+        outputUrl,
+        outputBlob: blob,
+        qa,
+        saved: false,
+        _autoFixed: true, // still consumed extra API calls
+      };
+    }
 
     return {
       status: "completed",
-      projectId: data.projectId as string,
+      projectId,
       outputUrl,
       outputBlob: blob,
       qa,
@@ -796,7 +929,6 @@ export function BatchGhostStudioTool({ collectionId }: { collectionId?: string |
     };
   }, []);
 
-  // ── Batch processing ───────────────────────────────────────────────────────
   const handleBatchGenerate = useCallback(async () => {
     if (products.length === 0) return;
     abortRef.current = false;
@@ -814,16 +946,22 @@ export function BatchGhostStudioTool({ collectionId }: { collectionId?: string |
 
       setProducts((prev) => prev.map((p, idx) => idx === i ? { ...p, status: "processing" as const } : p));
 
+      let didAutoFix = false;
       try {
-        const updates = await processProduct(products[i]);
+        const updates = await processProduct(products[i], (statusUpdates) => {
+          setProducts((prev) => prev.map((p, idx) => idx === i ? { ...p, ...statusUpdates } : p));
+        });
+        didAutoFix = !!(updates as Record<string, unknown>)._autoFixed;
         setProducts((prev) => prev.map((p, idx) => idx === i ? { ...p, ...updates } : p));
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Ismeretlen hiba";
         setProducts((prev) => prev.map((p, idx) => idx === i ? { ...p, status: "failed" as const, error: msg } : p));
       }
 
+      // Adaptive cooldown: longer pause after auto-fix (consumed extra API calls)
       if (i < products.length - 1 && !abortRef.current) {
-        await new Promise((r) => setTimeout(r, 1000));
+        const cooldown = didAutoFix ? 6_000 : 2_000;
+        await new Promise((r) => setTimeout(r, cooldown));
       }
     }
 
@@ -836,7 +974,6 @@ export function BatchGhostStudioTool({ collectionId }: { collectionId?: string |
     toast("Feldolgozás leállítva. A folyamatban lévő kép még befejezződik.");
   }, []);
 
-  // ── Download zip ───────────────────────────────────────────────────────────
   const handleDownloadZip = useCallback(async () => {
     const completed = products.filter((p) => p.status === "completed" && p.outputBlob);
     if (completed.length === 0) {
@@ -865,7 +1002,6 @@ export function BatchGhostStudioTool({ collectionId }: { collectionId?: string |
     setSelectedProductId(null);
   }, []);
 
-  // ── Stats ──────────────────────────────────────────────────────────────────
   const completedCount = products.filter((p) => p.status === "completed").length;
   const failedCount = products.filter((p) => p.status === "failed").length;
   const pendingCount = products.filter((p) => p.status === "pending").length;

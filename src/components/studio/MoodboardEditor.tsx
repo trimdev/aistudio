@@ -51,7 +51,6 @@ async function extractColors(url: string, count = 6): Promise<string[]> {
   });
 }
 
-// ── Memoized gallery panel — never re-renders due to canvas state changes ──────
 const GalleryPanel = memo(function GalleryPanel({
   gallery,
   loading,
@@ -115,7 +114,6 @@ const GalleryPanel = memo(function GalleryPanel({
   );
 });
 
-// ── Memoized canvas item — only re-renders when its own data or selection changes ─
 const CanvasItem = memo(function CanvasItem({
   item,
   isSelected,
@@ -183,7 +181,6 @@ const CanvasItem = memo(function CanvasItem({
   );
 });
 
-// ── Main editor ────────────────────────────────────────────────────────────────
 export function MoodboardEditor({ moodboard: initial }: Props) {
   const [name, setName] = useState(initial.name);
   const [items, setItems] = useState<MoodboardItem[]>(initial.items);

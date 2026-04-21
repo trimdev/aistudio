@@ -13,7 +13,6 @@ import {
 } from "lucide-react";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface NavItem {
   href: string;
@@ -29,7 +28,6 @@ interface NavSection {
   items: NavItem[];
 }
 
-// ─── Component ────────────────────────────────────────────────────────────────
 
 export function StudioSidebar() {
   const pathname = usePathname();

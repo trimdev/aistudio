@@ -22,7 +22,6 @@ export default async function StudioDashboard() {
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   }).length;
 
-  // Real cost from actual Gemini usageMetadata stored per generation
   const { data: completedRows } = await createSupabaseAdminClient()
     .from("projects")
     .select("prompt_used, input_tokens, output_tokens")
@@ -36,7 +35,6 @@ export default async function StudioDashboard() {
   const totalInputTokens  = rows.reduce((s, p) => s + (p.input_tokens  ?? 0), 0);
   const totalOutputTokens = rows.reduce((s, p) => s + (p.output_tokens ?? 0), 0);
 
-  // For rows without token data (historical), fall back to estimates
   const rowsWithTokens = rows.filter((p) => p.input_tokens !== null).length;
   const rowsWithoutTokens = rows.length - rowsWithTokens;
   const fallbackInputTokens  = rowsWithoutTokens * 14_000;  // ~14k input tokens per gen (avg)

@@ -33,21 +33,18 @@ export async function proxy(req: NextRequest) {
     }
   );
 
-  // Must call getUser() to refresh the session token
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   const { pathname } = req.nextUrl;
 
-  // Redirect unauthenticated users away from protected routes
   if (!isPublic(pathname) && !user) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
   }
 
-  // Redirect authenticated users away from auth pages
   if ((pathname === "/login" || pathname === "/signup") && user) {
     const url = req.nextUrl.clone();
     url.pathname = "/studio";

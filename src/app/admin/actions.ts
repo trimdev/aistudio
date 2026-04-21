@@ -6,7 +6,6 @@ import { revalidatePath } from "next/cache";
 import { getWorkspace } from "@/lib/workspace";
 import { getServerUser, createSupabaseAdminClient } from "@/lib/supabase/server";
 
-/** Admin enters a client workspace (sets impersonation cookie). */
 export async function enterWorkspace(workspaceId: string) {
   const user = await getServerUser();
   if (!user) redirect("/login");
@@ -26,7 +25,6 @@ export async function enterWorkspace(workspaceId: string) {
   redirect("/studio");
 }
 
-/** Admin exits the impersonated workspace and returns to the admin dashboard. */
 export async function exitWorkspace() {
   const cookieStore = await cookies();
   cookieStore.delete("gs-view-ws");
@@ -35,7 +33,6 @@ export async function exitWorkspace() {
 
 const VALID_MODULES = ["fashion", "furniture", "ghost", "model", "moodboard", "design-model", "video"] as const;
 
-/** Admin creates a new user account + workspace. */
 export async function createWorkspace(
   formData: FormData
 ): Promise<{ error?: string; name?: string }> {
@@ -74,8 +71,7 @@ export async function createWorkspace(
     .insert({ user_id: newUser.user.id, name, modules: validModules });
 
   if (wsErr) {
-    // Roll back: delete the auth user so we don't leave orphans
-    await admin.auth.admin.deleteUser(newUser.user.id).catch(() => {});
+    await admin.auth.admin.deleteUser(newUser.user.id).catch(console.error);
     return { error: wsErr.message };
   }
 
@@ -83,7 +79,6 @@ export async function createWorkspace(
   return { name };
 }
 
-/** Admin deletes a workspace, all its data, and the auth user. */
 export async function deleteWorkspace(
   workspaceId: string
 ): Promise<{ error?: string }> {
@@ -95,7 +90,6 @@ export async function deleteWorkspace(
 
   const admin = createSupabaseAdminClient();
 
-  // Fetch the workspace to get user_id
   const { data: ws } = await admin
     .from("workspaces")
     .select("user_id, role")
@@ -122,7 +116,6 @@ export async function setWorkspaceModules(workspaceId: string, modules: string[]
   const workspace = await getWorkspace();
   if (!workspace || workspace.role !== "admin") redirect("/studio");
 
-  // Validate — only allow known module strings
   const validModules = modules.filter((m) => (VALID_MODULES as readonly string[]).includes(m));
 
   const admin = createSupabaseAdminClient();

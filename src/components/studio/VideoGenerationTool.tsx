@@ -33,6 +33,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
+import { compressImage } from "@/lib/image-utils";
 import { useLanguage } from "@/components/providers/LanguageProvider";
 import {
   MOTION_STYLES,
@@ -52,8 +53,6 @@ import {
   type DesignModel,
   type DesignBackground,
 } from "@/lib/design-model-data";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 type WizardStep = 1 | 2 | 3 | 4 | 5 | 6;
 
@@ -107,48 +106,7 @@ const WIZARD_STEPS = [
   { step: 6 as WizardStep, label: "Előnézet & Generálás", labelEn: "Preview & Generate", icon: Sparkles },
 ];
 
-// ─── Image compression ──────────────────────────────────────────────────────
-
-async function compressImage(file: File, maxMB = 1.5, maxPx = 1920): Promise<File> {
-  return new Promise((resolve) => {
-    if (file.size <= maxMB * 1024 * 1024) { resolve(file); return; }
-    const img = new Image();
-    const blobUrl = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(blobUrl);
-      let { naturalWidth: w, naturalHeight: h } = img;
-      if (w > maxPx || h > maxPx) {
-        const r = Math.min(maxPx / w, maxPx / h);
-        w = Math.round(w * r);
-        h = Math.round(h * r);
-      }
-      const canvas = document.createElement("canvas");
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext("2d")!;
-      ctx.drawImage(img, 0, 0, w, h);
-      const attempt = (quality: number) => {
-        canvas.toBlob(
-          (blob) => {
-            if (!blob) { resolve(file); return; }
-            if (blob.size > maxMB * 1024 * 1024 && quality > 0.45) {
-              attempt(quality - 0.1);
-            } else {
-              resolve(new File([blob], file.name, { type: "image/jpeg" }));
-            }
-          },
-          "image/jpeg",
-          quality,
-        );
-      };
-      attempt(0.85);
-    };
-    img.onerror = () => { URL.revokeObjectURL(blobUrl); resolve(file); };
-    img.src = blobUrl;
-  });
-}
-
-// ─── Main Component ──────────────────────────────────────────────────────────
+// Main Component
 
 export function VideoGenerationTool({
   collectionId,
@@ -157,10 +115,8 @@ export function VideoGenerationTool({
 }) {
   const { t, lang } = useLanguage();
 
-  // ── Wizard navigation ──
   const [currentStep, setCurrentStep] = useState<WizardStep>(1);
 
-  // ── Step 1: Upload ──
   const [frontImage, setFrontImage] = useState<File | null>(null);
   const [backImage, setBackImage] = useState<File | null>(null);
   const [sideImage, setSideImage] = useState<File | null>(null);
@@ -169,51 +125,42 @@ export function VideoGenerationTool({
   const [sidePreview, setSidePreview] = useState<string | null>(null);
   const [projectName, setProjectName] = useState("");
 
-  // ── Step 2: Template & Motion ──
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [selectedMotion, setSelectedMotion] = useState<string>("slow-cinematic");
 
-  // ── Step 3: Camera & Timing ──
   const [selectedCamera, setSelectedCamera] = useState<string>("front");
   const [selectedAspectRatio, setSelectedAspectRatio] = useState<"9:16" | "16:9" | "1:1" | "4:5">("9:16");
   const [duration, setDuration] = useState<number>(5);
   const [loopVideo, setLoopVideo] = useState(true);
 
-  // ── Step 4: Model & Background ──
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [selectedBackground, setSelectedBackground] = useState<string | null>(null);
   const [modelFilter, setModelFilter] = useState<ModelFilter>("all");
   const [bgFilter, setBgFilter] = useState<BgFilter>("all");
 
-  // ── Step 5: Music & Branding ──
   const [selectedMusic, setSelectedMusic] = useState<string>("none");
   const [brandingPosition, setBrandingPosition] = useState<string>("none");
   const [brandingText, setBrandingText] = useState("");
   const [brandingLogo, setBrandingLogo] = useState<File | null>(null);
   const [brandingLogoPreview, setBrandingLogoPreview] = useState<string | null>(null);
 
-  // ── Step 6: Generate ──
   const [genStep, setGenStep] = useState<GenerationStep>("idle");
   const [genError, setGenError] = useState<string | null>(null);
   const [resultVideoUrl, setResultVideoUrl] = useState<string | null>(null);
   const [resultProjectId, setResultProjectId] = useState<string | null>(null);
   const stepTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-  // ── Drag-and-drop state ──
   const [dragging, setDragging] = useState<"front" | "back" | "side" | null>(null);
 
-  // ── Collection photos (existing project images) ──
   const [collectionPhotos, setCollectionPhotos] = useState<CollectionPhoto[]>([]);
   const [collectionPhotosLoading, setCollectionPhotosLoading] = useState(false);
   const [selectedSourcePhotoId, setSelectedSourcePhotoId] = useState<string | null>(null);
 
-  // ── Refs for file inputs ──
   const frontRef = useRef<HTMLInputElement>(null);
   const backRef = useRef<HTMLInputElement>(null);
   const sideRef = useRef<HTMLInputElement>(null);
   const logoRef = useRef<HTMLInputElement>(null);
 
-  // ── Fetch collection photos ──
   useEffect(() => {
     if (!collectionId) return;
     setCollectionPhotosLoading(true);
@@ -228,8 +175,6 @@ export function VideoGenerationTool({
       .catch(() => {})
       .finally(() => setCollectionPhotosLoading(false));
   }, [collectionId]);
-
-  // ── Helpers ──
 
   const handleImageSelect = useCallback(
     (which: "front" | "back" | "side", file: File | null) => {
@@ -309,8 +254,6 @@ export function VideoGenerationTool({
     stepTimers.current = [];
   }, []);
 
-  // ── Generate ──
-
   const handleGenerate = useCallback(async () => {
     if (!frontImage && !selectedSourcePhotoId) {
       toast.error("Tölts fel ruhafotót, vagy válassz fotót a projektből.");
@@ -380,7 +323,6 @@ export function VideoGenerationTool({
     selectedBackground, collectionId, clearStepTimers,
   ]);
 
-  // ── Current motion/camera/music objects ──
   const activeMotion = MOTION_STYLES.find((m) => m.id === selectedMotion)!;
   const activeCamera = CAMERA_ANGLES.find((c) => c.id === selectedCamera)!;
   const activeMusic  = MUSIC_MOODS.find((m) => m.id === selectedMusic)!;
@@ -408,8 +350,6 @@ export function VideoGenerationTool({
 
   const isGenerating = genStep !== "idle" && genStep !== "done" && genStep !== "error";
   const backHref = collectionId ? `/studio/projects/${collectionId}` : "/studio/projects";
-
-  // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="flex flex-col h-full bg-gray-50">

@@ -11,7 +11,6 @@ export async function createVersion(
 ): Promise<ProjectVersion> {
   const supabase = await createSupabaseServerClient();
 
-  // Get current max version number
   const { data: existing } = await supabase
     .from("project_versions")
     .select("version_number")

@@ -163,8 +163,6 @@ export default async function AdminPage() {
     const errorDenom = wsFailed + wsCompleted.length;
     const errorRate = errorDenom > 0 ? Math.round((wsFailed / errorDenom) * 100) : 0;
 
-    // Estimate cost from prompt_used (no token columns on admin query)
-    // Ghost: ~14k in + 1k out ≈ $0.00135; Model: ~10k in + 1.5k out ≈ $0.00120
     const rawCost = wsCompleted.reduce((sum, p) => {
       return sum + (p.prompt_used?.startsWith("model-") ? 0.0012 : 0.00135);
     }, 0);
@@ -206,7 +204,6 @@ export default async function AdminPage() {
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
-      {/* ── Header ─────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between mb-8">
         <div>
           <div className="flex items-center gap-3 mb-1">
@@ -223,7 +220,6 @@ export default async function AdminPage() {
         </div>
       </div>
 
-      {/* ── Stats row ──────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-10">
         {[
           { icon: Users,       label: "Ügyfelek",         value: stats.workspaces,        accent: "bg-blue-50 text-blue-600" },
@@ -249,16 +245,13 @@ export default async function AdminPage() {
         </Card>
       </div>
 
-      {/* ── 7-day trend chart ───────────────────────────────────────────── */}
       <div className="mb-10">
         <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-3">7 napos generálási trend</h2>
         <MiniTrendChart days={trendDays} />
       </div>
 
-      {/* ── Create new workspace ────────────────────────────────────────── */}
       <CreateWorkspaceForm />
 
-      {/* ── Client workspace cards ──────────────────────────────────────── */}
       <div className="flex items-center justify-between mb-5">
         <h2 className="font-semibold text-gray-900">Ügyfelek munkaterületei</h2>
         <span className="text-xs text-gray-400">{clients.length} munkaterület</span>

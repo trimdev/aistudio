@@ -13,26 +13,8 @@ import {
   ASPECT_RATIOS,
 } from "@/lib/video-generation-data";
 import { DESIGN_MODELS, DESIGN_BACKGROUNDS } from "@/lib/design-model-data";
-
-// ── Rate limiting ────────────────────────────────────────────────────────────
-
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
-const RATE_LIMIT = 10; // stricter for video (expensive)
-const RATE_WINDOW_MS = 60 * 60 * 1000;
-
-function checkRateLimit(userId: string): { allowed: boolean; remaining: number } {
-  const now = Date.now();
-  const entry = rateLimitMap.get(userId);
-  if (!entry || entry.resetAt < now) {
-    rateLimitMap.set(userId, { count: 1, resetAt: now + RATE_WINDOW_MS });
-    return { allowed: true, remaining: RATE_LIMIT - 1 };
-  }
-  if (entry.count >= RATE_LIMIT) return { allowed: false, remaining: 0 };
-  entry.count++;
-  return { allowed: true, remaining: RATE_LIMIT - entry.count };
-}
-
-// ── POST handler ─────────────────────────────────────────────────────────────
+import { checkRateLimit } from "@/lib/api/rate-limit";
+import { ALLOWED_IMAGE_TYPES, MAX_FILE_SIZE } from "@/lib/api/constants";
 
 export async function POST(req: NextRequest) {
   // 1. Auth
@@ -40,7 +22,7 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
 
   // 2. Rate limit
-  const { allowed, remaining } = checkRateLimit(user.id);
+  const { allowed, remaining } = checkRateLimit(user.id, 10, "generate-video");
   if (!allowed) {
     return NextResponse.json(
       { error: "Rate limit exceeded. Max 10 video generations per hour." },
@@ -73,12 +55,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Front image or source project is required." }, { status: 400 });
   }
 
-  const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
   for (const file of [frontFile, backFile, sideFile].filter(Boolean) as File[]) {
-    if (!allowedTypes.includes(file.type)) {
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type as typeof ALLOWED_IMAGE_TYPES[number])) {
       return NextResponse.json({ error: `Unsupported file type: ${file.type}` }, { status: 400 });
     }
-    if (file.size > 10 * 1024 * 1024) {
+    if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json({ error: "File too large (max 10MB)." }, { status: 400 });
     }
   }
@@ -251,7 +232,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (err: unknown) {
     await updateProject(project.id, { status: "failed" });
-    const errMsg = err instanceof Error ? err.message : String(err);
+    const errMsg = err instanceof Error ? (err.name !== "Error" ? err.toString() : err.message) : String(err);
     console.error("[generate-video] error:", errMsg);
     return NextResponse.json({ error: errMsg }, { status: 500 });
   }

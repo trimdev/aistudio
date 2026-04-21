@@ -5,36 +5,17 @@ import { getEffectiveWorkspace } from "@/lib/workspace";
 import { createProject, updateProject, getProject } from "@/lib/projects";
 import { createVersion } from "@/lib/versions";
 import { getServerUser, createSupabaseAdminClient } from "@/lib/supabase/server";
+import { normalizeMime } from "@/lib/api/mime";
+import { checkRateLimit } from "@/lib/api/rate-limit";
+import { ALLOWED_IMAGE_TYPES, MAX_FILE_SIZE } from "@/lib/api/constants";
 
 export const maxDuration = 300;
-
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
-const RATE_LIMIT     = 30;
-const RATE_WINDOW_MS = 60 * 60 * 1000;
-
-function checkRateLimit(userId: string) {
-  const now   = Date.now();
-  const entry = rateLimitMap.get(userId);
-  if (!entry || entry.resetAt < now) {
-    rateLimitMap.set(userId, { count: 1, resetAt: now + RATE_WINDOW_MS });
-    return { allowed: true, remaining: RATE_LIMIT - 1 };
-  }
-  if (entry.count >= RATE_LIMIT) return { allowed: false, remaining: 0 };
-  entry.count++;
-  return { allowed: true, remaining: RATE_LIMIT - entry.count };
-}
-
-function normalizeMime(type: string): string {
-  const base = type.split(";")[0].trim().toLowerCase();
-  if (base === "image/jpg" || base === "image/pjpeg") return "image/jpeg";
-  return base;
-}
 
 export async function POST(req: NextRequest) {
   const user = await getServerUser();
   if (!user) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
 
-  const { allowed, remaining } = checkRateLimit(user.id);
+  const { allowed, remaining } = checkRateLimit(user.id, 30, "furniture-lifestyle");
   if (!allowed) return NextResponse.json({ error: "Rate limit exceeded." }, { status: 429 });
 
   const formData       = await req.formData();
@@ -87,11 +68,10 @@ export async function POST(req: NextRequest) {
       }
     } else {
       const allFiles = [frontFile!, ...(angleFile ? [angleFile] : [])];
-      const allowed  = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
       for (const f of allFiles) {
-        if (!allowed.includes(f.type))
+        if (!ALLOWED_IMAGE_TYPES.includes(f.type as typeof ALLOWED_IMAGE_TYPES[number]))
           return NextResponse.json({ error: `Unsupported file type: ${f.type}` }, { status: 400 });
-        if (f.size > 10 * 1024 * 1024)
+        if (f.size > MAX_FILE_SIZE)
           return NextResponse.json({ error: `${f.name} exceeds 10 MB.` }, { status: 400 });
         buffers.push(Buffer.from(await f.arrayBuffer()));
         mimeTypes.push(normalizeMime(f.type));
@@ -131,7 +111,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (err: unknown) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Generation failed" },
+      { error: err instanceof Error ? (err.name !== "Error" ? err.toString() : err.message) : String(err) },
       { status: 500 }
     );
   }
