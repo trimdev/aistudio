@@ -18,6 +18,12 @@ CRITICAL DEFECTS (these MUST be flagged):
 - Skin-toned or plastic-looking areas where the mannequin was not fully removed
 - Clips, pins, or support hardware visible
 
+TEXT / PRINT / LOGO DEFECTS (MUST be flagged):
+- Any text, logo, number, or printed graphic that appears backwards, mirrored, or reversed on either the front or back view
+- Words or letters that read right-to-left instead of left-to-right
+- Logos or brand names that are horizontally flipped
+- Text on the back view that is a mirror image of the front instead of reading correctly from the back perspective
+
 OTHER DEFECTS TO CHECK:
 - Background not pure white (gray areas, shadows, gradients)
 - Garment proportions distorted or unnatural

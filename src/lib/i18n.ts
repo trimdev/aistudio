@@ -25,7 +25,7 @@ export const translations = {
     mod_regenerate: "Regenerate",
     mod_need_photos: "Upload front & back photos to continue",
     mod_info: "Generates two complete triptychs (front · side · back) — blonde and brunette — simultaneously.",
-    mod_proceed: "Create Model Photos",
+    mod_proceed: "Generate Model Photos",
     mod_empty_title: "Ready to generate",
     mod_empty_hint: "Upload the garment photos and click Generate.",
 
@@ -274,7 +274,7 @@ export const translations = {
     mod_regenerate: "Újragenerálás",
     mod_need_photos: "Töltsd fel az elöl és hátul fotókat",
     mod_info: "Két teljes triptikot generál (elöl · oldal · hátul) — szőke és barna változatban — egyszerre.",
-    mod_proceed: "Modell fotók készítése",
+    mod_proceed: "Modell fotó generálás",
     mod_empty_title: "Kész a generálásra",
     mod_empty_hint: "Töltsd fel a ruhafotókat és kattints a Generálásra.",
 

@@ -75,10 +75,8 @@ export function SettingsPanel({
   };
 
   const handleProceedToModel = () => {
-    // Stash raw garment images on window so ModelStudioTool can pick them up
-    // after client-side navigation (File objects survive SPA navigation).
-    (window as unknown as Record<string, unknown>).__ghostTransfer = { images };
-    router.push("/studio/new/model");
+    const params = collectionId ? `?collectionId=${collectionId}` : "";
+    router.push(`/studio/new/design-model${params}`);
   };
 
   const isLoading = step !== "idle" && step !== "done" && step !== "error";

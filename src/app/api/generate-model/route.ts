@@ -123,21 +123,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Load workspace model reference photo for this variant
-    let modelRefBuffer: Buffer | null = null;
-    let modelRefMime: string | null = null;
-    try {
-      const adminStorage = createSupabaseAdminClient().storage;
-      const refPath = `${workspace.id}/model-refs/${variant}`;
-      const { data: refData } = await adminStorage.from("ghost-inputs").download(refPath);
-      if (refData) {
-        modelRefBuffer = Buffer.from(await refData.arrayBuffer());
-        modelRefMime = normalizeMime(refData.type || "image/jpeg");
-      }
-    } catch {
-      // No reference photo set — continue without it
-    }
-
     const { imageBuffer, mimeType: rawMimeType, inputTokens, outputTokens } = await generateModelPhoto(
       buffers,
       mimeTypes,
@@ -146,8 +131,6 @@ export async function POST(req: NextRequest) {
       sceneType,
       keywords,
       workspace?.gemini_api_key,
-      modelRefBuffer,
-      modelRefMime,
       extraPrompt || undefined
     );
     // Normalize Gemini's output mimeType — it can include parameters or non-standard values

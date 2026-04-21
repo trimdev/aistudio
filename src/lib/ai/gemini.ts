@@ -69,6 +69,16 @@ Preserve ALL original garment details exactly as shown:
 
 No simplification. No removal. No added design elements. No artistic reinterpretation.
 
+TEXT / PRINT / LOGO ORIENTATION — CRITICAL REQUIREMENT:
+Every piece of text, logo, number, letter, word, or graphic print on the garment MUST read correctly and naturally in BOTH views:
+- FRONT VIEW: text and logos must read left-to-right, exactly as they appear on the front of the physical garment.
+- BACK VIEW: text and logos must read left-to-right, exactly as they would appear to someone standing BEHIND the wearer looking at the back of the garment.
+- The front view and the back view are TWO INDEPENDENT PERSPECTIVES of the garment. Do NOT mirror, flip, or reverse the back view from the front.
+- If the input back photo shows text reading correctly (left-to-right), preserve that orientation in the output back view.
+- If the input back photo shows text that appears mirrored or reversed, CORRECT it so it reads naturally in the output.
+- NEVER produce backwards, mirrored, or reversed text on either view. Every word must be legible and correctly oriented.
+- This applies to ALL printed content: brand names, slogans, numbers, size labels, care labels, decorative text, graphic logos, and any other directional design element.
+
 TECHNICAL SPECIFICATIONS:
 - Background: pure white (#FFFFFF) — no grey, no off-white
 - Lighting: soft, even, flat studio lighting
@@ -264,6 +274,7 @@ CRITICAL — PRESERVE EVERYTHING EXCEPT THE REQUESTED FIX:
 - All other parts of the image must remain pixel-perfect identical to the current composite.
 - Background stays pure white (#FFFFFF).
 - Do NOT re-generate or re-compose the whole image — apply a surgical fix to the described area only.
+- TEXT / PRINT / LOGO ORIENTATION: All text, logos, and printed graphics must read correctly (left-to-right, not mirrored) in BOTH the front and back views. If the current composite has backwards or mirrored text on either view, correct it so every word is legible and naturally oriented.
 
 User's refinement request: ${feedback.trim()}`;
 
@@ -396,8 +407,6 @@ export async function generateModelPhoto(
   sceneType: "photoshoot" | "lifestyle",
   keywords: string[],
   clientApiKey?: string | null,
-  modelRefBuffer?: Buffer | null,
-  modelRefMime?: string | null,
   extraPrompt?: string
 ): Promise<GhostMannequinImageResult> {
   const apiKey = resolveApiKey(clientApiKey);
@@ -420,38 +429,23 @@ export async function generateModelPhoto(
     },
   }));
 
-  const refPart: Part[] = modelRefBuffer
-    ? [{
-        inlineData: {
-          data: modelRefBuffer.toString("base64"),
-          mimeType: (modelRefMime ?? "image/jpeg") as "image/jpeg" | "image/png" | "image/webp",
-        },
-      }]
-    : [];
-
   const prompt = buildSinglePhotoPrompt(variant, sceneType, poseIndex, keywords);
 
-  const refInstruction = modelRefBuffer
-    ? `\n\nIMAGE ROLES:\n- Images 1–${imageBuffers.length} (first): THE ACTUAL GARMENT to copy — these are the uploaded product photos. The model must wear this EXACT garment with 100% accuracy.\n- Last image: Model APPEARANCE reference — match face structure, hair color, and hair style ONLY. CRITICAL: completely IGNORE any clothing the person in this last image is wearing. That clothing is irrelevant and must NOT influence what garment you generate. The garment is defined ONLY by the first images.`
-    : `\n\nGARMENT IMAGES: The uploaded image(s) show the PHYSICAL GARMENT the model must wear. Copy it exactly — same type, length, color, collar, quilting, hardware, and all visible details. Do not replace it with a different or "similar" garment.`;
+  const garmentInstruction = `\n\nGARMENT IMAGES: The uploaded image(s) show the PHYSICAL GARMENT the model must wear. Copy it exactly — same type, length, color, collar, quilting, hardware, and all visible details. Do not replace it with a different or "similar" garment.`;
 
   const extraLine = extraPrompt?.trim()
     ? `\n\nAdditional instructions for this specific photo: ${extraPrompt.trim()}`
     : "";
 
-  const fullPrompt = `${prompt}${refInstruction}${extraLine}`;
+  const fullPrompt = `${prompt}${garmentInstruction}${extraLine}`;
 
-  // Image order: [garment photos] → [model reference (if any)] → [text prompt]
-  // Garment comes FIRST so Gemini anchors to it; model ref comes LAST as supplementary appearance reference only
-  const requestWithRef    = { contents: [{ role: "user", parts: [...garmentParts, ...refPart, { text: fullPrompt }] }] };
-  const requestWithoutRef = { contents: [{ role: "user", parts: [...garmentParts, { text: fullPrompt }] }] };
+  const request = { contents: [{ role: "user", parts: [...garmentParts, { text: fullPrompt }] }] };
 
   const MAX_ATTEMPTS = 2;
   const RETRY_DELAY_MS = 10_000;
 
-  // Phase 1: try with model reference (if provided)
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const result = await model.generateContent(requestWithRef);
+    const result = await model.generateContent(request);
     const parts  = result.response.candidates?.[0]?.content?.parts ?? [];
     const imgPart = parts.find((p: Part) => p.inlineData?.data);
 
@@ -465,45 +459,14 @@ export async function generateModelPhoto(
       };
     }
 
-    const finishReason = String(result.response.candidates?.[0]?.finishReason ?? "UNKNOWN");
-
-    // IMAGE_OTHER = deterministic refusal — retrying same request won't help.
-    // If a model reference was the likely cause, fall through to phase 2 immediately.
-    if (finishReason === "IMAGE_OTHER" || finishReason === "IMAGE_SAFETY") {
-      break;
-    }
+    const finishReason = result.response.candidates?.[0]?.finishReason ?? "UNKNOWN";
+    const textPart = parts.find((p) => "text" in p);
+    const detail   = textPart && "text" in textPart ? (textPart as { text: string }).text : `finish_reason=${finishReason}`;
 
     if (attempt < MAX_ATTEMPTS) {
       await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
-    }
-  }
-
-  // Phase 2: if we have a reference photo and it caused a refusal, retry without it
-  if (refPart.length > 0) {
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      const result = await model.generateContent(requestWithoutRef);
-      const parts  = result.response.candidates?.[0]?.content?.parts ?? [];
-      const imgPart = parts.find((p: Part) => p.inlineData?.data);
-
-      if (imgPart && "inlineData" in imgPart && imgPart.inlineData?.data) {
-        const usage = result.response.usageMetadata;
-        return {
-          imageBuffer: Buffer.from(imgPart.inlineData.data, "base64"),
-          mimeType: imgPart.inlineData.mimeType || "image/png",
-          inputTokens: usage?.promptTokenCount ?? 0,
-          outputTokens: usage?.candidatesTokenCount ?? 0,
-        };
-      }
-
-      const finishReason = result.response.candidates?.[0]?.finishReason ?? "UNKNOWN";
-      const textPart = parts.find((p) => "text" in p);
-      const detail   = textPart && "text" in textPart ? (textPart as { text: string }).text : `finish_reason=${finishReason}`;
-
-      if (attempt < MAX_ATTEMPTS) {
-        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
-      } else {
-        throw new Error(`AI did not return an image. Details: ${detail}`);
-      }
+    } else {
+      throw new Error(`AI did not return an image. Details: ${detail}`);
     }
   }
 
