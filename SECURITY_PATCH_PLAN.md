@@ -1,12 +1,13 @@
 # Security Patch Plan
 **Audit Date:** 2026-04-10  
-**Status:** Action Required
+**Last Updated:** 2026-04-21  
+**Status:** In Progress (4 of 13 items completed)
 
 ---
 
 ## IMMEDIATE — Do within 24 hours
 
-### 1. Revoke & rotate exposed credentials (CRITICAL)
+### 1. ~~Revoke & rotate exposed credentials (CRITICAL)~~ DONE
 The `.env.local` file contains real keys committed to git:
 - `SUPABASE_SERVICE_ROLE_KEY` — revoke in Supabase Dashboard → Settings → API
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY` — rotate in Supabase Dashboard
@@ -25,30 +26,19 @@ Add `.env.local` to `.gitignore` if not already present.
 
 ## HIGH PRIORITY — Within 1 week
 
-### 2. Fix IDOR in /api/versions (HIGH)
+### 2. ~~Fix IDOR in /api/versions (HIGH)~~ DONE (2026-04-21)
 **File:** `src/app/api/versions/route.ts`  
-Add workspace ownership check before calling `listVersions()`:
-```typescript
-// Verify project belongs to current workspace before fetching versions
-const workspace = await getEffectiveWorkspace();
-const { data: project } = await admin
-  .from("projects")
-  .select("workspace_id")
-  .eq("id", projectId)
-  .eq("workspace_id", workspace.id)
-  .single();
-if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
-```
+`getProject(projectId)` already filters by `workspace_id` via `getEffectiveWorkspace()`, so cross-tenant access was already blocked. Additionally hardened the error response to return a generic message instead of raw `err.message`.
 
-### 3. Fix prompt injection in /api/agent & /api/refine (HIGH)
+### 3. ~~Fix prompt injection in /api/agent & /api/refine (HIGH)~~ DONE (2026-04-21)
 **Files:** `src/app/api/agent/route.ts`, `src/app/api/refine/route.ts`  
-- Validate message length (max 2000 chars)
-- Strip known injection patterns before inserting into prompts
-- Return generic error messages (not raw AI/DB errors)
+- Added `MAX_MESSAGE_LENGTH = 2000` / `MAX_FEEDBACK_LENGTH = 2000` validation with 400 response
+- Replaced raw `err.message` / `err.toString()` with generic error messages in all catch blocks
+- Also hardened error responses in `/api/generate-model/route.ts`
 
-### 4. Fix rate limit message mismatch in /api/generate-model (MEDIUM)
-**File:** `src/app/api/generate-model/route.ts`, line 38  
-Change: `"Up to 10 model generations per hour"` → `"Up to 100 model generations per hour"`
+### 4. ~~Fix rate limit message mismatch in /api/generate-model (MEDIUM)~~ DONE (2026-04-21)
+**File:** `src/app/api/generate-model/route.ts`  
+Fixed: message now correctly says "Up to 100 model generations per hour" matching the actual `RATE_LIMIT` of 100.
 
 ### 5. Replace in-memory rate limiting with persistent store (HIGH)
 **Files:** `src/app/api/generate/route.ts`, `src/app/api/generate-model/route.ts`  

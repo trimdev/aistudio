@@ -340,6 +340,7 @@ function RefinementPanel({ projectId, onRefined, annotationBlob, onClearAnnotati
           placeholder={t("refine_ph")}
           disabled={isRefining}
           rows={2}
+          maxLength={2000}
           className="text-sm border-gray-200 resize-none leading-relaxed flex-1"
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleRefine();

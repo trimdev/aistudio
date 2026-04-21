@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
   const { allowed, remaining } = checkRateLimit(user.id, 100, "generate-model");
   if (!allowed) {
     return NextResponse.json(
-      { error: "Rate limit exceeded. Up to 10 model generations per hour." },
+      { error: "Rate limit exceeded. Up to 100 model generations per hour." },
       { status: 429 }
     );
   }
@@ -177,7 +177,7 @@ export async function POST(req: NextRequest) {
   } catch (err: unknown) {
     console.error("[generate-model]", err);
     return NextResponse.json(
-      { error: err instanceof Error ? (err.name !== "Error" ? err.toString() : err.message) : String(err) },
+      { error: "Model photo generation failed. Please try again." },
       { status: 500 }
     );
   }

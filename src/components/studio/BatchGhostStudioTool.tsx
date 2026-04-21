@@ -765,6 +765,7 @@ function ProductDetailView({
             placeholder="Pl. A gallér szélén látszik a mannequin..."
             disabled={isRefining}
             rows={2}
+            maxLength={2000}
             className="text-sm border-gray-200 resize-none leading-relaxed flex-1"
             onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleRefine(); }}
           />

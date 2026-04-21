@@ -11,6 +11,8 @@ import { normalizeMime } from "@/lib/api/mime";
 
 export const maxDuration = 300;
 
+const MAX_FEEDBACK_LENGTH = 2000;
+
 export async function POST(req: NextRequest) {
   const user = await getServerUser();
   if (!user) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
@@ -21,6 +23,13 @@ export async function POST(req: NextRequest) {
   const annotationFile = formData.get("annotation") as File | null;
   if (!projectId || !feedback?.trim()) {
     return NextResponse.json({ error: "projectId and feedback are required." }, { status: 400 });
+  }
+
+  if (feedback!.length > MAX_FEEDBACK_LENGTH) {
+    return NextResponse.json(
+      { error: `Feedback must be at most ${MAX_FEEDBACK_LENGTH} characters.` },
+      { status: 400 }
+    );
   }
 
   const project = await getProject(projectId);
@@ -132,7 +141,7 @@ export async function POST(req: NextRequest) {
   } catch (err: unknown) {
     console.error("[refine]", err);
     return NextResponse.json(
-      { error: err instanceof Error ? (err.name !== "Error" ? err.toString() : err.message) : String(err) },
+      { error: "Refinement failed. Please try again." },
       { status: 500 }
     );
   }

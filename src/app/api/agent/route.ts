@@ -8,6 +8,8 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const maxDuration = 60;
 
+const MAX_MESSAGE_LENGTH = 2000;
+
 export async function POST(req: NextRequest) {
   const user = await getServerUser();
   if (!user) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
@@ -20,6 +22,16 @@ export async function POST(req: NextRequest) {
   const { messages, projectId } = body;
   if (!messages?.length) {
     return NextResponse.json({ error: "messages required" }, { status: 400 });
+  }
+
+  // Validate message lengths to prevent token flooding
+  for (const msg of messages) {
+    if (typeof msg.text !== "string" || msg.text.length > MAX_MESSAGE_LENGTH) {
+      return NextResponse.json(
+        { error: `Each message must be at most ${MAX_MESSAGE_LENGTH} characters.` },
+        { status: 400 }
+      );
+    }
   }
 
   const workspace = await getWorkspace();
@@ -98,7 +110,7 @@ ${versions.length > 0 ? `\nVersion history:\n${versions.map(v => `  v${v.version
   } catch (err: unknown) {
     console.error("[agent]", err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Agent error" },
+      { error: "Agent processing failed. Please try again." },
       { status: 500 }
     );
   }

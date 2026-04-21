@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ versions });
   } catch (err: unknown) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Failed to load versions" },
+      { error: "Failed to load versions" },
       { status: 500 }
     );
   }
