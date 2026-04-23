@@ -104,17 +104,15 @@ export async function POST(req: NextRequest) {
     _step = "loadMemories";
     const memories = await listWorkspaceMemories(workspace.id).catch(() => []);
     const memoryBlock = buildMemoryPromptBlock(memories);
-    const effectiveRefinePrompt = memoryBlock
-      ? (refinePrompt ? `${refinePrompt}\n${memoryBlock}` : memoryBlock.trim())
-      : refinePrompt;
 
-    // Generate image
+    // Generate image — memory block passed as separate param, not mixed into refinePrompt
     _step = "geminiGenerate";
     const { imageBuffer, mimeType: rawMimeType, inputTokens, outputTokens } = await generateGhostMannequin(
       buffers,
       mimeTypes,
       workspace?.gemini_api_key,
-      effectiveRefinePrompt
+      refinePrompt,
+      memoryBlock
     );
     // Normalize Gemini's output mimeType — it can include parameters or non-standard values
     const mimeType = normalizeMime(rawMimeType);

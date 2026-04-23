@@ -10,23 +10,28 @@ import {
   type Part,
 } from "@google/generative-ai";
 
-export const GHOST_MANNEQUIN_SYSTEM_PROMPT = `PRIORITY 1 — REMOVE ALL MANNEQUIN (overrides everything else):
-Remove EVERY trace of the mannequin. Zero mannequin body visible anywhere.
-- NECKLINE: No neck form, no skin-toned plastic inside or behind the collar. Collar interior must be hollow/empty.
-- BOTTOM/HEM: No mannequin base, stand, leg forms, or plastic edges below the garment.
-- ARMHOLES: No arm forms inside sleeves.
-- NO mannequin torso, shoulders, or body shape visible through or around the fabric.
-If any mannequin part is visible, the image is WRONG. The garment must float on its own.
+export const GHOST_MANNEQUIN_SYSTEM_PROMPT = `Create a professional ghost mannequin (invisible mannequin) product photo for a fashion e-commerce webshop.
 
-PRIORITY 2 — LAYOUT:
-Side-by-side horizontally: FRONT view LEFT, BACK view RIGHT.
-Same scale, aligned baselines, centered on canvas. Never stacked.
+PRIORITY 1 — GHOST MANNEQUIN EFFECT (the core task):
+Remove EVERY trace of the mannequin while preserving the garment's natural self-supporting 3D form.
+The garment must appear as if worn by an invisible body — with realistic structure, natural fabric drape,
+and hollow openings visible at the neckline, sleeves, and hem. The result should look like a premium
+product photo where the garment floats in space with its shape intact.
 
-PRIORITY 3 — TECHNICAL:
-Pure white background (#FFFFFF). Soft flat studio lighting. No shadows of any kind. Sharp focus.
+PRIORITY 2 — CRITICAL REMOVAL AREAS (any mannequin here = failure):
+- NECKLINE/COLLAR: No neck form, no skin-toned plastic. Collar interior must be hollow/empty.
+- HEM/BOTTOM: No mannequin base, stand, legs, or plastic edges below the garment.
+- ARMHOLES/SLEEVES: No arm forms visible inside sleeve openings.
+- No mannequin torso, shoulders, or body shape visible through or around the fabric.
 
-PRIORITY 4 — GARMENT FIDELITY:
-Preserve exact colors (no enhancement/shifts), all details (stitching, buttons, zippers, prints, logos, patterns, embroidery, labels).
+PRIORITY 3 — LAYOUT:
+Side-by-side horizontally: FRONT view LEFT, BACK view RIGHT. Same scale, aligned baselines, centered.
+
+PRIORITY 4 — TECHNICAL:
+Pure white background (#FFFFFF). Soft flat studio lighting. No shadows. Sharp focus.
+
+PRIORITY 5 — GARMENT FIDELITY:
+Preserve exact colors, all details (stitching, buttons, zippers, prints, logos, patterns).
 Text/logos must read correctly left-to-right in BOTH views. Do not mirror the back view.`;
 
 export interface GhostMannequinImageResult {
@@ -55,7 +60,8 @@ export async function generateGhostMannequin(
   imageBuffers: Buffer[],
   mimeTypes: string[],
   clientApiKey?: string | null,
-  refinePrompt?: string
+  refinePrompt?: string,
+  memoryBlock?: string
 ): Promise<GhostMannequinImageResult> {
   const apiKey = resolveApiKey(clientApiKey);
   const genAI = new GoogleGenerativeAI(apiKey);
@@ -88,15 +94,20 @@ export async function generateGhostMannequin(
     });
   }
 
-  const fullPrompt = refinePrompt?.trim()
-    ? `${GHOST_MANNEQUIN_SYSTEM_PROMPT}\n\nAdditional refinement from the user: ${refinePrompt.trim()}`
-    : GHOST_MANNEQUIN_SYSTEM_PROMPT;
+  let fullPrompt = GHOST_MANNEQUIN_SYSTEM_PROMPT;
+  if (memoryBlock?.trim()) {
+    fullPrompt += `\n\n${memoryBlock.trim()}`;
+  }
+  if (refinePrompt?.trim()) {
+    fullPrompt += `\n\nAdditional refinement from the user: ${refinePrompt.trim()}`;
+  }
 
+  // Images FIRST, then text — vision models need visual context before instructions
   const result = await model.generateContent({
     contents: [
       {
         role: "user",
-        parts: [{ text: fullPrompt }, ...labeledParts],
+        parts: [...labeledParts, { text: fullPrompt }],
       },
     ],
   });
@@ -189,7 +200,9 @@ export async function refineGhostMannequin(
     ? `The LAST image is an annotation overlay where the user has drawn RED marks over the specific area that needs correction. Focus ONLY on those red-marked regions.`
     : "";
 
-  const refinementPrompt = `${GHOST_MANNEQUIN_SYSTEM_PROMPT}${memoryBlock}
+  const memorySection = memoryBlock?.trim() ? `\n\n${memoryBlock.trim()}` : "";
+
+  const refinementPrompt = `${GHOST_MANNEQUIN_SYSTEM_PROMPT}${memorySection}
 
 --- REFINEMENT INSTRUCTIONS ---
 
@@ -204,9 +217,9 @@ REFINEMENT RULES:
 
 User's refinement request: ${feedback.trim()}`;
 
-  // Text prompt FIRST so model reads instructions before processing images
+  // Images FIRST, then text — vision models need visual context before instructions
   const result = await model.generateContent({
-    contents: [{ role: "user", parts: [{ text: refinementPrompt }, ...imageParts] }],
+    contents: [{ role: "user", parts: [...imageParts, { text: refinementPrompt }] }],
   });
 
   const parts = result.response.candidates?.[0]?.content?.parts ?? [];
