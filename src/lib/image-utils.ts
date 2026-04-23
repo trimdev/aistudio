@@ -27,7 +27,7 @@ export async function compressImage(file: File, maxMB = 1.5, maxPx = 1920): Prom
       const attempt = () => {
         canvas.toBlob((blob) => {
           if (!blob) { resolve(file); return; }
-          if (blob.size > maxMB * 1024 * 1024 && quality > 0.45) {
+          if (blob.size > maxMB * 1024 * 1024 && quality > 0.65) {
             quality = Math.round((quality - 0.1) * 10) / 10;
             attempt();
           } else {

@@ -21,6 +21,12 @@ No mannequin body, no mannequin neck, no mannequin arms, no mannequin torso, no 
 The garment floats entirely on its own. If any part of a mannequin is visible, the image is wrong.
 This rule overrides every other instruction.
 
+CRITICAL AREAS — MOST COMMON FAILURES:
+- NECKLINE / COLLAR AREA: The mannequin neck form is the #1 most common artifact. The collar and neckline must show ONLY fabric — no skin-toned, plastic, or solid-colored neck form behind or inside the collar. The inside of the collar opening must appear hollow/empty.
+- BOTTOM / HEM AREA: The mannequin base, stand, or lower torso form must be completely removed from the hem, waistband, and bottom edge of the garment. No plastic edges, no mannequin leg forms, no base plate visible below the garment.
+- ARMHOLES / SLEEVE OPENINGS: No mannequin arm forms visible inside or around sleeve openings.
+These three areas require EXTRA attention. Double-check each one before finalizing the output.
+
 FINAL LAYOUT — MANDATORY:
 Display two views of the same garment side-by-side horizontally:
 - LEFT: FRONT VIEW
@@ -140,7 +146,7 @@ export async function generateGhostMannequin(
   const model = genAI.getGenerativeModel({
     model: "gemini-2.5-flash-image",
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    generationConfig: { responseModalities: ["TEXT", "IMAGE"] } as any,
+    generationConfig: { responseModalities: ["TEXT", "IMAGE"], temperature: 0 } as any,
     safetySettings: [
       {
         category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
@@ -221,7 +227,7 @@ export async function refineGhostMannequin(
   const model = genAI.getGenerativeModel({
     model: "gemini-2.5-flash-image",
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    generationConfig: { responseModalities: ["TEXT", "IMAGE"] } as any,
+    generationConfig: { responseModalities: ["TEXT", "IMAGE"], temperature: 0 } as any,
     safetySettings: [
       { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
       { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },

@@ -11,12 +11,18 @@ const QA_SYSTEM_PROMPT = `You are a strict quality-assurance inspector for ghost
 
 Your job: inspect the provided image and report ANY quality issues.
 
-CRITICAL DEFECTS (these MUST be flagged):
+CRITICAL DEFECTS (these MUST be flagged — any single one means pass=false, severity="critical"):
 - Any visible mannequin body part: neck form, torso shape, arm form, shoulder form, leg form
 - Mannequin edges or outlines visible around the neckline, collar, armholes, or hem
 - Mannequin color/texture bleeding through the garment
 - Skin-toned or plastic-looking areas where the mannequin was not fully removed
 - Clips, pins, or support hardware visible
+
+PAY EXTRA ATTENTION TO THESE AREAS (most frequent failures):
+- NECKLINE / COLLAR: Look carefully inside and behind the collar for any solid neck form shape, skin-toned plastic, or non-fabric material. The collar interior must appear hollow/empty — only fabric edges visible, no mannequin neck.
+- BOTTOM / HEM / WAISTBAND: Check below the garment hem for any mannequin base, stand, leg form, or plastic edge. The bottom of the garment must end cleanly with no mannequin parts visible beneath it.
+- ARMHOLES / SLEEVE OPENINGS: Check for mannequin arm forms visible inside sleeve openings.
+If you see ANY mannequin artifact in these areas, it is ALWAYS a critical defect — never downgrade to warning.
 
 TEXT / PRINT / LOGO DEFECTS (MUST be flagged):
 - Any text, logo, number, or printed graphic that appears backwards, mirrored, or reversed on either the front or back view
@@ -105,11 +111,11 @@ export async function POST(req: NextRequest) {
       const qa = JSON.parse(jsonStr);
       return NextResponse.json(qa);
     } catch {
-      // If we can't parse, return a conservative fail
+      // If we can't parse, return a conservative fail — treat as critical
       return NextResponse.json({
         pass: false,
         issues: ["QA válasz feldolgozási hiba"],
-        severity: "warning",
+        severity: "critical",
         summary: "A QA ellenőrzés nem tudta feldolgozni az eredményt.",
         raw: text,
       });

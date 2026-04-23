@@ -474,24 +474,49 @@ function ProductDetailView({
 
       const projectId = data.projectId as string;
 
-      // Auto-fix if QA detected issues
-      if (qa && !qa.pass && projectId) {
-        onProductUpdated(product.id, { status: "fixing", qa });
+      const qaFailed = !qa || !qa.pass || qa.severity === "critical";
 
-        const fixed = await attemptAutoFix(projectId, blob, qa);
+      // Auto-fix if QA detected issues
+      if (qaFailed && projectId) {
+        const qaForStatus = qa ?? {
+          pass: false,
+          issues: ["QA ellenőrzés sikertelen — nem futott le"],
+          severity: "critical" as const,
+          summary: "QA nem futott le, manuális ellenőrzés szükséges.",
+        };
+        onProductUpdated(product.id, { status: "fixing", qa: qaForStatus });
+
+        const fixed = await attemptAutoFix(projectId, blob, qaForStatus);
         if (fixed) {
+          const fixedQaOk = fixed.qa && fixed.qa.pass && fixed.qa.severity !== "critical";
           onProductUpdated(product.id, {
-            status: "completed",
+            status: fixedQaOk ? "completed" : "failed",
             projectId,
             outputUrl: fixed.outputUrl,
             outputBlob: fixed.outputBlob,
-            error: undefined,
+            error: fixedQaOk ? undefined : "Automatikus javítás után is maradtak kritikus QA hibák",
             qa: fixed.qa,
             saved: false,
           });
-          toast.success(`${product.folderName} újragenerálva és automatikusan javítva!`);
+          toast[fixedQaOk ? "success" : "error"](
+            fixedQaOk
+              ? `${product.folderName} újragenerálva és automatikusan javítva!`
+              : `${product.folderName} javítás sikertelen — manuális ellenőrzés szükséges`
+          );
           return;
         }
+        // Auto-fix failed entirely
+        onProductUpdated(product.id, {
+          status: "failed",
+          projectId,
+          outputUrl,
+          outputBlob: blob,
+          error: "QA hibát talált és az automatikus javítás sikertelen",
+          qa: qaForStatus,
+          saved: false,
+        });
+        toast.error(`${product.folderName} — QA hiba, javítás sikertelen`);
+        return;
       }
 
       onProductUpdated(product.id, {
@@ -893,30 +918,46 @@ export function BatchGhostStudioTool({ collectionId }: { collectionId?: string |
 
     const projectId = data.projectId as string;
 
-    if (qa && !qa.pass && projectId) {
-      onStatusUpdate?.({ status: "fixing" as const, qa });
+    // Determine if QA indicates a problem:
+    // - qa is undefined (QA failed to run) → treat as failed
+    // - qa.pass is false → explicit fail
+    // - qa.severity is "critical" → fail even if pass is somehow true
+    const qaFailed = !qa || !qa.pass || qa.severity === "critical";
 
-      const fixed = await attemptAutoFix(projectId, blob, qa);
+    if (qaFailed && projectId) {
+      const qaForStatus = qa ?? {
+        pass: false,
+        issues: ["QA ellenőrzés sikertelen — nem futott le"],
+        severity: "critical" as const,
+        summary: "QA nem futott le, manuális ellenőrzés szükséges.",
+      };
+      onStatusUpdate?.({ status: "fixing" as const, qa: qaForStatus });
+
+      const fixed = await attemptAutoFix(projectId, blob, qaForStatus);
       if (fixed) {
+        // Check if the fix actually resolved the issues
+        const fixedQaOk = fixed.qa && fixed.qa.pass && fixed.qa.severity !== "critical";
         return {
-          status: "completed",
+          status: fixedQaOk ? "completed" : "failed",
           projectId,
           outputUrl: fixed.outputUrl,
           outputBlob: fixed.outputBlob,
+          error: fixedQaOk ? undefined : "Automatikus javítás után is maradtak kritikus QA hibák",
           qa: fixed.qa,
           saved: false,
           _autoFixed: true,
         };
       }
-      // Auto-fix failed — fall through with original result + QA issues
+      // Auto-fix failed entirely — mark as failed
       return {
-        status: "completed",
+        status: "failed",
         projectId,
         outputUrl,
         outputBlob: blob,
-        qa,
+        error: "QA hibát talált és az automatikus javítás sikertelen",
+        qa: qaForStatus,
         saved: false,
-        _autoFixed: true, // still consumed extra API calls
+        _autoFixed: true,
       };
     }
 
