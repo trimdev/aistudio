@@ -196,40 +196,74 @@ async function generateAnnotationFromRegions(
   });
 }
 
+const AUTO_FIX_MAX_ATTEMPTS = 2;
+
+function buildAutoFixFeedback(qa: QaResult): string {
+  const issueActions = qa.issues.map((issue) => {
+    const lower = issue.toLowerCase();
+    if (lower.includes("neck") || lower.includes("collar") || lower.includes("nyak"))
+      return `${issue} → REMOVE the neck form completely. The collar interior must be hollow/empty, showing only fabric edges.`;
+    if (lower.includes("base") || lower.includes("stand") || lower.includes("hem") || lower.includes("bottom") || lower.includes("leg") || lower.includes("alj"))
+      return `${issue} → REMOVE the mannequin base/stand/leg form below the garment. The hem must end cleanly against white background.`;
+    if (lower.includes("arm") || lower.includes("sleeve") || lower.includes("kar"))
+      return `${issue} → REMOVE the arm form from inside the sleeve opening. Sleeves must appear hollow.`;
+    if (lower.includes("mannequin") || lower.includes("torso") || lower.includes("bábú"))
+      return `${issue} → REMOVE all visible mannequin body parts. Replace with empty space or white background.`;
+    return issue;
+  });
+  return `REMOVE ALL VISIBLE MANNEQUIN PARTS. Specific issues to fix:\n${issueActions.map((i) => `- ${i}`).join("\n")}`;
+}
+
 async function attemptAutoFix(
   projectId: string,
   imageBlob: Blob,
   qa: QaResult
 ): Promise<{ outputUrl: string; outputBlob: Blob; qa?: QaResult } | null> {
-  try {
-    // Generate annotation overlay from QA bounding box regions
-    let annotationBlob: Blob | null = null;
-    if (qa.regions?.length) {
-      annotationBlob = await generateAnnotationFromRegions(imageBlob, qa.regions);
+  let currentBlob = imageBlob;
+  let currentQa = qa;
+  let bestResult: { outputUrl: string; outputBlob: Blob; qa?: QaResult } | null = null;
+
+  for (let attempt = 1; attempt <= AUTO_FIX_MAX_ATTEMPTS; attempt++) {
+    try {
+      // Generate annotation overlay from QA bounding box regions
+      let annotationBlob: Blob | null = null;
+      if (currentQa.regions?.length) {
+        annotationBlob = await generateAnnotationFromRegions(currentBlob, currentQa.regions);
+      }
+
+      const feedback = buildAutoFixFeedback(currentQa);
+
+      const refineForm = new FormData();
+      refineForm.append("projectId", projectId);
+      refineForm.append("feedback", feedback);
+      if (annotationBlob) refineForm.append("annotation", annotationBlob, "annotation.png");
+
+      const refineRes = await fetch("/api/refine", { method: "POST", body: refineForm });
+      if (!refineRes.ok) break;
+
+      const refineData = await refineRes.json();
+      const newOutputUrl = refineData.outputUrl as string;
+      const newBlob = await fetch(newOutputUrl).then((r) => r.blob());
+
+      // Re-run QA on the refined result
+      const newQa = await runQaWithRetry(newBlob);
+
+      bestResult = { outputUrl: newOutputUrl, outputBlob: newBlob, qa: newQa };
+
+      // If QA passed or couldn't run (undefined), stop retrying
+      if (!newQa || (newQa.pass && newQa.severity !== "critical")) {
+        return bestResult;
+      }
+
+      // QA still failing — use refined image as input for next attempt
+      currentBlob = newBlob;
+      currentQa = newQa;
+    } catch {
+      break;
     }
-
-    // Build feedback from QA issues
-    const feedback = `Automatikus QA javítás. Észlelt problémák:\n${qa.issues.map((i) => `- ${i}`).join("\n")}`;
-
-    const refineForm = new FormData();
-    refineForm.append("projectId", projectId);
-    refineForm.append("feedback", feedback);
-    if (annotationBlob) refineForm.append("annotation", annotationBlob, "annotation.png");
-
-    const refineRes = await fetch("/api/refine", { method: "POST", body: refineForm });
-    if (!refineRes.ok) return null;
-
-    const refineData = await refineRes.json();
-    const newOutputUrl = refineData.outputUrl as string;
-    const newBlob = await fetch(newOutputUrl).then((r) => r.blob());
-
-    // Re-run QA on the refined result (with retry)
-    const newQa = await runQaWithRetry(newBlob);
-
-    return { outputUrl: newOutputUrl, outputBlob: newBlob, qa: newQa };
-  } catch {
-    return null;
   }
+
+  return bestResult;
 }
 
 function ProductCard({
@@ -1015,7 +1049,7 @@ export function BatchGhostStudioTool({ collectionId }: { collectionId?: string |
   }, []);
 
   const handleDownloadZip = useCallback(async () => {
-    const completed = products.filter((p) => p.status === "completed" && p.outputBlob);
+    const completed = products.filter((p) => p.status === "completed" && p.outputBlob && p.qa?.severity !== "critical");
     if (completed.length === 0) {
       toast.error("Nincs letölthető eredmény.");
       return;

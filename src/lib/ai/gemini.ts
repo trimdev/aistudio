@@ -10,107 +10,24 @@ import {
   type Part,
 } from "@google/generative-ai";
 
-// Do NOT modify a single word – clients depend on this exact output.
-export const GHOST_MANNEQUIN_SYSTEM_PROMPT = `You are a professional high-end fashion e-commerce product photographer and image editor.
+export const GHOST_MANNEQUIN_SYSTEM_PROMPT = `PRIORITY 1 — REMOVE ALL MANNEQUIN (overrides everything else):
+Remove EVERY trace of the mannequin. Zero mannequin body visible anywhere.
+- NECKLINE: No neck form, no skin-toned plastic inside or behind the collar. Collar interior must be hollow/empty.
+- BOTTOM/HEM: No mannequin base, stand, leg forms, or plastic edges below the garment.
+- ARMHOLES: No arm forms inside sleeves.
+- NO mannequin torso, shoulders, or body shape visible through or around the fabric.
+If any mannequin part is visible, the image is WRONG. The garment must float on its own.
 
-Create a professional ghost mannequin product image (invisible mannequin / hollow man effect) using the provided garment images.
+PRIORITY 2 — LAYOUT:
+Side-by-side horizontally: FRONT view LEFT, BACK view RIGHT.
+Same scale, aligned baselines, centered on canvas. Never stacked.
 
-RULE #1 — ABSOLUTE, NON-NEGOTIABLE:
-THE MANNEQUIN MUST BE COMPLETELY INVISIBLE.
-No mannequin body, no mannequin neck, no mannequin arms, no mannequin torso, no mannequin legs — zero trace of any mannequin or body form of any kind must appear anywhere in the output image.
-The garment floats entirely on its own. If any part of a mannequin is visible, the image is wrong.
-This rule overrides every other instruction.
+PRIORITY 3 — TECHNICAL:
+Pure white background (#FFFFFF). Soft flat studio lighting. No shadows of any kind. Sharp focus.
 
-CRITICAL AREAS — MOST COMMON FAILURES:
-- NECKLINE / COLLAR AREA: The mannequin neck form is the #1 most common artifact. The collar and neckline must show ONLY fabric — no skin-toned, plastic, or solid-colored neck form behind or inside the collar. The inside of the collar opening must appear hollow/empty.
-- BOTTOM / HEM AREA: The mannequin base, stand, or lower torso form must be completely removed from the hem, waistband, and bottom edge of the garment. No plastic edges, no mannequin leg forms, no base plate visible below the garment.
-- ARMHOLES / SLEEVE OPENINGS: No mannequin arm forms visible inside or around sleeve openings.
-These three areas require EXTRA attention. Double-check each one before finalizing the output.
-
-FINAL LAYOUT — MANDATORY:
-Display two views of the same garment side-by-side horizontally:
-- LEFT: FRONT VIEW
-- RIGHT: BACK VIEW
-
-Both views must:
-- Be aligned at the same vertical baseline
-- Have consistent scale and proportions relative to each other
-- Be evenly spaced with a clean gap between them
-- Be centered together on the canvas
-- NEVER be stacked vertically — always side by side
-
-GHOST MANNEQUIN EFFECT:
-- The garment must appear naturally self-supporting, as if worn by an invisible body.
-- Preserve realistic 3D structure and natural fabric drape.
-- Remove completely any mannequin, model, hanger, pins, hands, clips, supports or shadows from supports.
-- Neckline, sleeves, waistline and hem openings must look natural and hollow.
-- The interior hollow area must appear realistic and properly shaped.
-- No distortion of garment proportions.
-
-COLOR ACCURACY — CRITICAL REQUIREMENT:
-- Reproduce colors with absolute fidelity to the original garment.
-- Do NOT enhance, shift, brighten, recolor, stylize, filter or adjust saturation.
-- Maintain exact fabric tone, undertone and shading.
-- Preserve natural fabric sheen exactly as in reference.
-
-DETAIL PRESERVATION — CRITICAL REQUIREMENT:
-Preserve ALL original garment details exactly as shown:
-- Stitching
-- Seams
-- Buttons
-- Zippers
-- Pockets
-- Embroidery
-- Prints
-- Patterns
-- Logos
-- Labels
-- Badges
-- Drawstrings
-- Ribbing
-- Collar construction
-- Cuffs
-- Hem finishing
-- Any texture or structural details
-
-No simplification. No removal. No added design elements. No artistic reinterpretation.
-
-TEXT / PRINT / LOGO ORIENTATION — CRITICAL REQUIREMENT:
-Every piece of text, logo, number, letter, word, or graphic print on the garment MUST read correctly and naturally in BOTH views:
-- FRONT VIEW: text and logos must read left-to-right, exactly as they appear on the front of the physical garment.
-- BACK VIEW: text and logos must read left-to-right, exactly as they would appear to someone standing BEHIND the wearer looking at the back of the garment.
-- The front view and the back view are TWO INDEPENDENT PERSPECTIVES of the garment. Do NOT mirror, flip, or reverse the back view from the front.
-- If the input back photo shows text reading correctly (left-to-right), preserve that orientation in the output back view.
-- If the input back photo shows text that appears mirrored or reversed, CORRECT it so it reads naturally in the output.
-- NEVER produce backwards, mirrored, or reversed text on either view. Every word must be legible and correctly oriented.
-- This applies to ALL printed content: brand names, slogans, numbers, size labels, care labels, decorative text, graphic logos, and any other directional design element.
-
-TECHNICAL SPECIFICATIONS:
-- Background: pure white (#FFFFFF) — no grey, no off-white
-- Lighting: soft, even, flat studio lighting
-- Absolutely NO shadows of any kind
-- No cast shadows, no drop shadows, no contact shadows
-- No shadow beneath the garment
-- No dramatic contrast
-- High resolution
-- Sharp focus across entire garment
-- Clean, minimal, professional fashion e-commerce look
-- Output aspect ratio suitable for webshop (1:1 or 4:5 preferred)
-
-ABSOLUTE RESTRICTIONS:
-- No model
-- No mannequin
-- No Shadows
-- No hands
-- No props
-- No stylization
-- No color grading
-- No brand modification
-- No artistic interpretation
-- No background textures
-- No lifestyle scene
-
-This must look like a premium fashion webshop product image ready for upload.`;
+PRIORITY 4 — GARMENT FIDELITY:
+Preserve exact colors (no enhancement/shifts), all details (stitching, buttons, zippers, prints, logos, patterns, embroidery, labels).
+Text/logos must read correctly left-to-right in BOTH views. Do not mirror the back view.`;
 
 export interface GhostMannequinImageResult {
   imageBuffer: Buffer;
@@ -159,12 +76,17 @@ export async function generateGhostMannequin(
     ],
   });
 
-  const imageParts: Part[] = imageBuffers.map((buf, i) => ({
-    inlineData: {
-      data: buf.toString("base64"),
-      mimeType: mimeTypes[i] as "image/jpeg" | "image/png" | "image/webp",
-    },
-  }));
+  const imageLabels = ["FRONT view", "BACK view", "SIDE view (reference)"];
+  const labeledParts: Part[] = [];
+  for (let i = 0; i < imageBuffers.length; i++) {
+    labeledParts.push({ text: `Image ${i + 1}: ${imageLabels[i] ?? `view ${i + 1}`}` });
+    labeledParts.push({
+      inlineData: {
+        data: imageBuffers[i].toString("base64"),
+        mimeType: mimeTypes[i] as "image/jpeg" | "image/png" | "image/webp",
+      },
+    });
+  }
 
   const fullPrompt = refinePrompt?.trim()
     ? `${GHOST_MANNEQUIN_SYSTEM_PROMPT}\n\nAdditional refinement from the user: ${refinePrompt.trim()}`
@@ -174,7 +96,7 @@ export async function generateGhostMannequin(
     contents: [
       {
         role: "user",
-        parts: [...imageParts, { text: fullPrompt }],
+        parts: [{ text: fullPrompt }, ...labeledParts],
       },
     ],
   });
@@ -273,19 +195,18 @@ export async function refineGhostMannequin(
 
 ${inputContext}${annotationContext ? `\n${annotationContext}` : ""}
 
-CRITICAL — PRESERVE EVERYTHING EXCEPT THE REQUESTED FIX:
-- The side-by-side layout (front LEFT, back RIGHT) must remain EXACTLY as in the current composite. Do NOT change the arrangement.
-- Both garment views must stay in the same position, scale, and alignment as in the current composite.
-- Only the specific area described by the user should be changed.
-- All other parts of the image must remain pixel-perfect identical to the current composite.
-- Background stays pure white (#FFFFFF).
-- Do NOT re-generate or re-compose the whole image — apply a surgical fix to the described area only.
-- TEXT / PRINT / LOGO ORIENTATION: All text, logos, and printed graphics must read correctly (left-to-right, not mirrored) in BOTH the front and back views. If the current composite has backwards or mirrored text on either view, correct it so every word is legible and naturally oriented.
+REFINEMENT RULES:
+- Keep the side-by-side layout (front LEFT, back RIGHT) and overall composition.
+- Focus on fixing the described problem area. Preserve garment details, colors, and layout elsewhere.
+- MANNEQUIN REMOVAL is ALWAYS the top priority: if the issue mentions mannequin, neck form, base, stand, or arm form — remove it completely. Replace with hollow empty space or white background. Use the original garment photos as reference for what the fabric should look like without the mannequin.
+- Background stays pure white (#FFFFFF). No shadows.
+- Text/logos must read correctly (left-to-right) in both views.
 
 User's refinement request: ${feedback.trim()}`;
 
+  // Text prompt FIRST so model reads instructions before processing images
   const result = await model.generateContent({
-    contents: [{ role: "user", parts: [...imageParts, { text: refinementPrompt }] }],
+    contents: [{ role: "user", parts: [{ text: refinementPrompt }, ...imageParts] }],
   });
 
   const parts = result.response.candidates?.[0]?.content?.parts ?? [];
