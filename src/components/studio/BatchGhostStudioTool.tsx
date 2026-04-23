@@ -474,45 +474,39 @@ function ProductDetailView({
 
       const projectId = data.projectId as string;
 
-      const qaFailed = !qa || !qa.pass || qa.severity === "critical";
+      // Only auto-fix when QA actually ran and detected issues (not on API failures)
+      const qaDetectedIssues = qa && (!qa.pass || qa.severity === "critical");
 
-      // Auto-fix if QA detected issues
-      if (qaFailed && projectId) {
-        const qaForStatus = qa ?? {
-          pass: false,
-          issues: ["QA ellenőrzés sikertelen — nem futott le"],
-          severity: "critical" as const,
-          summary: "QA nem futott le, manuális ellenőrzés szükséges.",
-        };
-        onProductUpdated(product.id, { status: "fixing", qa: qaForStatus });
+      if (qaDetectedIssues && projectId) {
+        onProductUpdated(product.id, { status: "fixing", qa });
 
-        const fixed = await attemptAutoFix(projectId, blob, qaForStatus);
+        const fixed = await attemptAutoFix(projectId, blob, qa);
         if (fixed) {
-          const fixedQaOk = fixed.qa && fixed.qa.pass && fixed.qa.severity !== "critical";
+          const postFixQaFailed = fixed.qa && (!fixed.qa.pass || fixed.qa.severity === "critical");
           onProductUpdated(product.id, {
-            status: fixedQaOk ? "completed" : "failed",
+            status: postFixQaFailed ? "failed" : "completed",
             projectId,
             outputUrl: fixed.outputUrl,
             outputBlob: fixed.outputBlob,
-            error: fixedQaOk ? undefined : "Automatikus javítás után is maradtak kritikus QA hibák",
+            error: postFixQaFailed ? "Automatikus javítás után is maradtak kritikus QA hibák" : undefined,
             qa: fixed.qa,
             saved: false,
           });
-          toast[fixedQaOk ? "success" : "error"](
-            fixedQaOk
-              ? `${product.folderName} újragenerálva és automatikusan javítva!`
-              : `${product.folderName} javítás sikertelen — manuális ellenőrzés szükséges`
+          toast[postFixQaFailed ? "error" : "success"](
+            postFixQaFailed
+              ? `${product.folderName} javítás sikertelen — manuális ellenőrzés szükséges`
+              : `${product.folderName} újragenerálva és automatikusan javítva!`
           );
           return;
         }
-        // Auto-fix failed entirely
+        // Auto-fix call itself failed
         onProductUpdated(product.id, {
           status: "failed",
           projectId,
           outputUrl,
           outputBlob: blob,
           error: "QA hibát talált és az automatikus javítás sikertelen",
-          qa: qaForStatus,
+          qa,
           saved: false,
         });
         toast.error(`${product.folderName} — QA hiba, javítás sikertelen`);
@@ -918,44 +912,48 @@ export function BatchGhostStudioTool({ collectionId }: { collectionId?: string |
 
     const projectId = data.projectId as string;
 
-    // Determine if QA indicates a problem:
-    // - qa is undefined (QA failed to run) → treat as failed
-    // - qa.pass is false → explicit fail
-    // - qa.severity is "critical" → fail even if pass is somehow true
-    const qaFailed = !qa || !qa.pass || qa.severity === "critical";
-
-    if (qaFailed && projectId) {
-      const qaForStatus = qa ?? {
-        pass: false,
-        issues: ["QA ellenőrzés sikertelen — nem futott le"],
-        severity: "critical" as const,
-        summary: "QA nem futott le, manuális ellenőrzés szükséges.",
+    // Distinguish: QA API failure (undefined) vs real QA detection (pass=false / severity=critical)
+    // If QA didn't run, mark completed with no QA — user sees "QA nem futott" warning in UI
+    if (!qa) {
+      return {
+        status: "completed",
+        projectId,
+        outputUrl,
+        outputBlob: blob,
+        saved: false,
       };
-      onStatusUpdate?.({ status: "fixing" as const, qa: qaForStatus });
+    }
 
-      const fixed = await attemptAutoFix(projectId, blob, qaForStatus);
+    // Real QA detected issues — trigger auto-fix
+    const qaDetectedIssues = !qa.pass || qa.severity === "critical";
+
+    if (qaDetectedIssues && projectId) {
+      onStatusUpdate?.({ status: "fixing" as const, qa });
+
+      const fixed = await attemptAutoFix(projectId, blob, qa);
       if (fixed) {
-        // Check if the fix actually resolved the issues
-        const fixedQaOk = fixed.qa && fixed.qa.pass && fixed.qa.severity !== "critical";
+        // If post-fix QA ran and still found critical issues → failed
+        // If post-fix QA didn't run (undefined) → trust the fix, mark completed
+        const postFixQaFailed = fixed.qa && (!fixed.qa.pass || fixed.qa.severity === "critical");
         return {
-          status: fixedQaOk ? "completed" : "failed",
+          status: postFixQaFailed ? "failed" : "completed",
           projectId,
           outputUrl: fixed.outputUrl,
           outputBlob: fixed.outputBlob,
-          error: fixedQaOk ? undefined : "Automatikus javítás után is maradtak kritikus QA hibák",
+          error: postFixQaFailed ? "Automatikus javítás után is maradtak kritikus QA hibák" : undefined,
           qa: fixed.qa,
           saved: false,
           _autoFixed: true,
         };
       }
-      // Auto-fix failed entirely — mark as failed
+      // Auto-fix call itself failed — mark as failed
       return {
         status: "failed",
         projectId,
         outputUrl,
         outputBlob: blob,
         error: "QA hibát talált és az automatikus javítás sikertelen",
-        qa: qaForStatus,
+        qa,
         saved: false,
         _autoFixed: true,
       };
