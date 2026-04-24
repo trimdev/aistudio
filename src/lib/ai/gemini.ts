@@ -10,29 +10,15 @@ import {
   type Part,
 } from "@google/generative-ai";
 
-export const GHOST_MANNEQUIN_SYSTEM_PROMPT = `Create a professional ghost mannequin (invisible mannequin) product photo for a fashion e-commerce webshop.
+export const GHOST_MANNEQUIN_SYSTEM_PROMPT = `Remove the mannequin completely from these garment photos and create one single product image showing the front and back views side-by-side on a pure white background.
 
-PRIORITY 1 — GHOST MANNEQUIN EFFECT (the core task):
-Remove EVERY trace of the mannequin while preserving the garment's natural self-supporting 3D form.
-The garment must appear as if worn by an invisible body — with realistic structure, natural fabric drape,
-and hollow openings visible at the neckline, sleeves, and hem. The result should look like a premium
-product photo where the garment floats in space with its shape intact.
+The garment is currently on a mannequin. Remove the mannequin entirely — the neck form inside the collar, the torso, the arms inside sleeves, the legs/base below the hem. Everything. The result must show ONLY the garment floating in space as if worn by an invisible body, with a natural 3D shape and realistic fabric drape. The collar, sleeves, and hem openings should appear hollow and empty — no skin-toned plastic, no mannequin edges, no clips or pins visible anywhere.
 
-PRIORITY 2 — CRITICAL REMOVAL AREAS (any mannequin here = failure):
-- NECKLINE/COLLAR: No neck form, no skin-toned plastic. Collar interior must be hollow/empty.
-- HEM/BOTTOM: No mannequin base, stand, legs, or plastic edges below the garment.
-- ARMHOLES/SLEEVES: No arm forms visible inside sleeve openings.
-- No mannequin torso, shoulders, or body shape visible through or around the fabric.
+OUTPUT LAYOUT: One image with FRONT view on the LEFT and BACK view on the RIGHT, side-by-side horizontally, same scale, aligned baselines, centered on canvas. Never stacked vertically.
 
-PRIORITY 3 — LAYOUT:
-Side-by-side horizontally: FRONT view LEFT, BACK view RIGHT. Same scale, aligned baselines, centered.
+BACKGROUND: Pure white (#FFFFFF). Soft flat studio lighting. No shadows whatsoever. Sharp focus.
 
-PRIORITY 4 — TECHNICAL:
-Pure white background (#FFFFFF). Soft flat studio lighting. No shadows. Sharp focus.
-
-PRIORITY 5 — GARMENT FIDELITY:
-Preserve exact colors, all details (stitching, buttons, zippers, prints, logos, patterns).
-Text/logos must read correctly left-to-right in BOTH views. Do not mirror the back view.`;
+GARMENT FIDELITY: Preserve the exact colors, fabric texture, and every detail — stitching, buttons, zippers, prints, logos, patterns. Text and logos must read correctly left-to-right in both views. Do not mirror or flip the back view.`;
 
 export interface GhostMannequinImageResult {
   imageBuffer: Buffer;
@@ -82,19 +68,21 @@ export async function generateGhostMannequin(
     ],
   });
 
-  const imageLabels = ["FRONT view", "BACK view", "SIDE view (reference)"];
-  const labeledParts: Part[] = [];
-  for (let i = 0; i < imageBuffers.length; i++) {
-    labeledParts.push({ text: `Image ${i + 1}: ${imageLabels[i] ?? `view ${i + 1}`}` });
-    labeledParts.push({
-      inlineData: {
-        data: imageBuffers[i].toString("base64"),
-        mimeType: mimeTypes[i] as "image/jpeg" | "image/png" | "image/webp",
-      },
-    });
-  }
+  // Images as contiguous block — no interleaved text labels.
+  // Google docs: "place the text prompt after the image part"
+  const imageParts: Part[] = imageBuffers.map((buf, i) => ({
+    inlineData: {
+      data: buf.toString("base64"),
+      mimeType: mimeTypes[i] as "image/jpeg" | "image/png" | "image/webp",
+    },
+  }));
 
-  let fullPrompt = GHOST_MANNEQUIN_SYSTEM_PROMPT;
+  // Image role context goes INTO the prompt text, not as separate parts between images
+  const imageRoles = imageBuffers.length === 3
+    ? "The three uploaded images are: (1) FRONT view, (2) BACK view, (3) SIDE view for reference."
+    : "The two uploaded images are: (1) FRONT view, (2) BACK view.";
+
+  let fullPrompt = `${imageRoles}\n\n${GHOST_MANNEQUIN_SYSTEM_PROMPT}`;
   if (memoryBlock?.trim()) {
     fullPrompt += `\n\n${memoryBlock.trim()}`;
   }
@@ -102,12 +90,12 @@ export async function generateGhostMannequin(
     fullPrompt += `\n\nAdditional refinement from the user: ${refinePrompt.trim()}`;
   }
 
-  // Images FIRST, then text — vision models need visual context before instructions
+  // Images FIRST as contiguous block, then prompt text — matches AI Studio pattern
   const request = {
     contents: [
       {
         role: "user",
-        parts: [...labeledParts, { text: fullPrompt }],
+        parts: [...imageParts, { text: fullPrompt }],
       },
     ],
   };
@@ -216,20 +204,17 @@ export async function refineGhostMannequin(
 
   const memorySection = memoryBlock?.trim() ? `\n\n${memoryBlock.trim()}` : "";
 
-  const refinementPrompt = `${GHOST_MANNEQUIN_SYSTEM_PROMPT}${memorySection}
-
---- REFINEMENT INSTRUCTIONS ---
+  const refinementPrompt = `Edit this ghost mannequin product photo to fix the issues described below.
 
 ${inputContext}${annotationContext ? `\n${annotationContext}` : ""}
 
-REFINEMENT RULES:
-- Keep the side-by-side layout (front LEFT, back RIGHT) and overall composition.
-- Focus on fixing the described problem area. Preserve garment details, colors, and layout elsewhere.
-- MANNEQUIN REMOVAL is ALWAYS the top priority: if the issue mentions mannequin, neck form, base, stand, or arm form — remove it completely. Replace with hollow empty space or white background. Use the original garment photos as reference for what the fabric should look like without the mannequin.
-- Background stays pure white (#FFFFFF). No shadows.
-- Text/logos must read correctly (left-to-right) in both views.
+WHAT TO FIX: ${feedback.trim()}
 
-User's refinement request: ${feedback.trim()}`;
+RULES:
+- Keep the side-by-side layout (front LEFT, back RIGHT) and overall composition.
+- Remove any visible mannequin parts completely — replace with empty/hollow space and white background. The garment must float on its own with no mannequin visible anywhere.
+- Use the original garment photos as reference for what the fabric should look like.
+- Preserve garment colors, details, prints, and text. Background stays pure white (#FFFFFF), no shadows.${memorySection}`;
 
   // Images FIRST, then text — vision models need visual context before instructions
   const request = {

@@ -3,10 +3,10 @@ import type { UploadedPreviews } from "@/types";
 /**
  * Client-side image compression.
  *
- * Vercel serverless functions have a 4.5 MB request body limit.
- * Compress each image to fit comfortably (default: max 1.5 MB, max 1920 px).
+ * Body limit is 32 MB (next.config.ts). Per-image limit is 3 MB / 3072 px
+ * to preserve detail for Gemini while staying within limits for 3 images.
  */
-export async function compressImage(file: File, maxMB = 1.5, maxPx = 1920): Promise<File> {
+export async function compressImage(file: File, maxMB = 3, maxPx = 3072): Promise<File> {
   return new Promise((resolve) => {
     if (file.size <= maxMB * 1024 * 1024) { resolve(file); return; }
     const img = new Image();
