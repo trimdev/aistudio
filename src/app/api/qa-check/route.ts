@@ -122,9 +122,12 @@ export async function POST(req: NextRequest) {
     }
   } catch (err) {
     console.error("[qa-check]", err);
+    const message = err instanceof Error ? err.message : "QA check failed";
+    // Surface Gemini rate-limit errors as 429 so the client can use proper backoff
+    const isRateLimit = message.includes("RESOURCE_EXHAUSTED") || message.includes("429") || message.includes("quota");
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "QA check failed" },
-      { status: 500 }
+      { error: message },
+      { status: isRateLimit ? 429 : 500 }
     );
   }
 }

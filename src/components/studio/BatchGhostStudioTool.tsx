@@ -125,8 +125,12 @@ function parseProducts(files: File[]): BatchProduct[] {
 
 // QA check with retry
 
-const QA_MAX_RETRIES = 3;
-const QA_BASE_DELAY_MS = 4_000; // 4s, 8s, 12s backoff
+const QA_MAX_RETRIES = 5;
+
+// Exponential backoff: 8s, 16s, 32s, 64s, 64s — covers Gemini's 60s rolling window
+function qaRetryDelay(attempt: number): number {
+  return Math.min(8_000 * Math.pow(2, attempt - 1), 64_000);
+}
 
 async function runQaWithRetry(blob: Blob): Promise<QaResult | undefined> {
   for (let attempt = 1; attempt <= QA_MAX_RETRIES; attempt++) {
@@ -139,10 +143,10 @@ async function runQaWithRetry(blob: Blob): Promise<QaResult | undefined> {
         return (await qaRes.json()) as QaResult;
       }
 
-      // Rate-limited or server error — wait and retry
+      // Rate-limited or server error — wait and retry with exponential backoff
       if (qaRes.status === 429 || qaRes.status >= 500) {
         if (attempt < QA_MAX_RETRIES) {
-          await new Promise((r) => setTimeout(r, QA_BASE_DELAY_MS * attempt));
+          await new Promise((r) => setTimeout(r, qaRetryDelay(attempt)));
           continue;
         }
       }
@@ -152,7 +156,7 @@ async function runQaWithRetry(blob: Blob): Promise<QaResult | undefined> {
     } catch {
       // Network error — wait and retry
       if (attempt < QA_MAX_RETRIES) {
-        await new Promise((r) => setTimeout(r, QA_BASE_DELAY_MS * attempt));
+        await new Promise((r) => setTimeout(r, qaRetryDelay(attempt)));
         continue;
       }
     }
@@ -248,6 +252,9 @@ async function attemptAutoFix(
       const refineData = await refineRes.json();
       const newOutputUrl = refineData.outputUrl as string;
       const newBlob = await fetch(newOutputUrl).then((r) => r.blob());
+
+      // Breathing room before QA — let rate limit recover after refine call
+      await new Promise((r) => setTimeout(r, 5_000));
 
       // Re-run QA on the refined result
       const newQa = await runQaWithRetry(newBlob);
@@ -957,6 +964,9 @@ export function BatchGhostStudioTool({ collectionId }: { collectionId?: string |
     const outputUrl = data.outputUrl as string;
     const blob = await fetch(outputUrl).then((r) => r.blob());
 
+    // Breathing room before QA — let Gemini rate limit window recover after generation
+    await new Promise((r) => setTimeout(r, 5_000));
+
     // Run QA check on generated image (with retry + backoff)
     const qa = await runQaWithRetry(blob);
 
@@ -1049,8 +1059,9 @@ export function BatchGhostStudioTool({ collectionId }: { collectionId?: string |
       }
 
       // Adaptive cooldown: longer pause after auto-fix (consumed extra API calls)
+      // Must be long enough for Gemini's 60s rolling rate-limit window
       if (i < products.length - 1 && !abortRef.current) {
-        const cooldown = didAutoFix ? 6_000 : 2_000;
+        const cooldown = didAutoFix ? 15_000 : 8_000;
         await new Promise((r) => setTimeout(r, cooldown));
       }
     }
