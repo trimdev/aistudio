@@ -171,8 +171,7 @@ async function generateAnnotationFromRegions(
   const ctx = canvas.getContext("2d")!;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  ctx.strokeStyle = "rgba(239, 68, 68, 0.85)";
-  ctx.lineWidth = Math.max(4, Math.round(Math.min(canvas.width, canvas.height) / 120));
+  ctx.lineWidth = Math.max(6, Math.round(Math.min(canvas.width, canvas.height) / 80));
 
   for (const region of regions) {
     const [ymin, xmin, ymax, xmax] = region.bbox;
@@ -183,11 +182,15 @@ async function generateAnnotationFromRegions(
 
     const cx = (x1 + x2) / 2;
     const cy = (y1 + y2) / 2;
-    const rx = Math.max(((x2 - x1) / 2) * 1.25, 20);
-    const ry = Math.max(((y2 - y1) / 2) * 1.25, 20);
+    const rx = Math.max(((x2 - x1) / 2) * 1.3, 25);
+    const ry = Math.max(((y2 - y1) / 2) * 1.3, 25);
 
+    // Semi-transparent filled ellipse so Gemini can clearly see the problem area
     ctx.beginPath();
     ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(239, 68, 68, 0.35)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(239, 68, 68, 0.9)";
     ctx.stroke();
   }
 
@@ -222,6 +225,7 @@ async function attemptAutoFix(
   let currentBlob = imageBlob;
   let currentQa = qa;
   let bestResult: { outputUrl: string; outputBlob: Blob; qa?: QaResult } | null = null;
+  let bestIssueCount = qa.issues?.length ?? Infinity;
 
   for (let attempt = 1; attempt <= AUTO_FIX_MAX_ATTEMPTS; attempt++) {
     try {
@@ -248,10 +252,22 @@ async function attemptAutoFix(
       // Re-run QA on the refined result
       const newQa = await runQaWithRetry(newBlob);
 
-      bestResult = { outputUrl: newOutputUrl, outputBlob: newBlob, qa: newQa };
+      // If QA couldn't run (API failure), keep trying — don't accept blindly
+      if (!newQa) {
+        // Still use the refined image for the next attempt but don't update bestResult without QA
+        currentBlob = newBlob;
+        continue;
+      }
 
-      // If QA passed or couldn't run (undefined), stop retrying
-      if (!newQa || (newQa.pass && newQa.severity !== "critical")) {
+      // Track the best result by fewest issues (not just the latest)
+      const newIssueCount = newQa.issues?.length ?? 0;
+      if (!bestResult || newIssueCount < bestIssueCount) {
+        bestResult = { outputUrl: newOutputUrl, outputBlob: newBlob, qa: newQa };
+        bestIssueCount = newIssueCount;
+      }
+
+      // If QA passed, stop retrying
+      if (newQa.pass && newQa.severity !== "critical") {
         return bestResult;
       }
 
@@ -516,20 +532,20 @@ function ProductDetailView({
 
         const fixed = await attemptAutoFix(projectId, blob, qa);
         if (fixed) {
-          const postFixQaFailed = fixed.qa && (!fixed.qa.pass || fixed.qa.severity === "critical");
+          const postFixQaPassed = fixed.qa?.pass && fixed.qa.severity !== "critical";
           onProductUpdated(product.id, {
-            status: postFixQaFailed ? "failed" : "completed",
+            status: postFixQaPassed ? "completed" : "failed",
             projectId,
             outputUrl: fixed.outputUrl,
             outputBlob: fixed.outputBlob,
-            error: postFixQaFailed ? "Automatikus javítás után is maradtak kritikus QA hibák" : undefined,
+            error: postFixQaPassed ? undefined : "Automatikus javítás után is maradtak kritikus QA hibák",
             qa: fixed.qa,
             saved: false,
           });
-          toast[postFixQaFailed ? "error" : "success"](
-            postFixQaFailed
-              ? `${product.folderName} javítás sikertelen — manuális ellenőrzés szükséges`
-              : `${product.folderName} újragenerálva és automatikusan javítva!`
+          toast[postFixQaPassed ? "success" : "error"](
+            postFixQaPassed
+              ? `${product.folderName} újragenerálva és automatikusan javítva!`
+              : `${product.folderName} javítás sikertelen — manuális ellenőrzés szükséges`
           );
           return;
         }
@@ -946,14 +962,14 @@ export function BatchGhostStudioTool({ collectionId }: { collectionId?: string |
 
     const projectId = data.projectId as string;
 
-    // Distinguish: QA API failure (undefined) vs real QA detection (pass=false / severity=critical)
-    // If QA didn't run, mark completed with no QA — user sees "QA nem futott" warning in UI
+    // QA API failure (undefined) — cannot verify quality, mark as failed so it's not silently accepted
     if (!qa) {
       return {
-        status: "completed",
+        status: "failed",
         projectId,
         outputUrl,
         outputBlob: blob,
+        error: "QA ellenőrzés nem futott le — kézi ellenőrzés szükséges",
         saved: false,
       };
     }
@@ -966,15 +982,15 @@ export function BatchGhostStudioTool({ collectionId }: { collectionId?: string |
 
       const fixed = await attemptAutoFix(projectId, blob, qa);
       if (fixed) {
-        // If post-fix QA ran and still found critical issues → failed
-        // If post-fix QA didn't run (undefined) → trust the fix, mark completed
-        const postFixQaFailed = fixed.qa && (!fixed.qa.pass || fixed.qa.severity === "critical");
+        // Post-fix QA must have actually passed to mark completed
+        // If QA didn't run (undefined) or still found critical issues → failed
+        const postFixQaPassed = fixed.qa?.pass && fixed.qa.severity !== "critical";
         return {
-          status: postFixQaFailed ? "failed" : "completed",
+          status: postFixQaPassed ? "completed" : "failed",
           projectId,
           outputUrl: fixed.outputUrl,
           outputBlob: fixed.outputBlob,
-          error: postFixQaFailed ? "Automatikus javítás után is maradtak kritikus QA hibák" : undefined,
+          error: postFixQaPassed ? undefined : "Automatikus javítás után is maradtak kritikus QA hibák",
           qa: fixed.qa,
           saved: false,
           _autoFixed: true,
@@ -1049,7 +1065,7 @@ export function BatchGhostStudioTool({ collectionId }: { collectionId?: string |
   }, []);
 
   const handleDownloadZip = useCallback(async () => {
-    const completed = products.filter((p) => p.status === "completed" && p.outputBlob && p.qa?.severity !== "critical");
+    const completed = products.filter((p) => p.status === "completed" && p.outputBlob && p.qa?.pass && p.qa?.severity !== "critical");
     if (completed.length === 0) {
       toast.error("Nincs letölthető eredmény.");
       return;

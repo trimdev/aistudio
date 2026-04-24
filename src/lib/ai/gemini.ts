@@ -103,31 +103,45 @@ export async function generateGhostMannequin(
   }
 
   // Images FIRST, then text — vision models need visual context before instructions
-  const result = await model.generateContent({
+  const request = {
     contents: [
       {
         role: "user",
         parts: [...labeledParts, { text: fullPrompt }],
       },
     ],
-  });
+  };
 
-  const parts = result.response.candidates?.[0]?.content?.parts ?? [];
-  const imgPart = parts.find((p: Part) => p.inlineData?.data);
+  const MAX_ATTEMPTS = 2;
+  const RETRY_DELAY_MS = 10_000;
 
-  if (!imgPart || !("inlineData" in imgPart) || !imgPart.inlineData?.data) {
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const result = await model.generateContent(request);
+    const parts = result.response.candidates?.[0]?.content?.parts ?? [];
+    const imgPart = parts.find((p: Part) => p.inlineData?.data);
+
+    if (imgPart && "inlineData" in imgPart && imgPart.inlineData?.data) {
+      const usage = result.response.usageMetadata;
+      return {
+        imageBuffer: Buffer.from(imgPart.inlineData.data, "base64"),
+        mimeType: imgPart.inlineData.mimeType || "image/png",
+        inputTokens: usage?.promptTokenCount ?? 0,
+        outputTokens: usage?.candidatesTokenCount ?? 0,
+      };
+    }
+
     const textPart = parts.find((p) => "text" in p);
-    const detail = textPart && "text" in textPart ? textPart.text : "No image returned";
-    throw new Error(`AI did not return an image. Details: ${detail}`);
+    const detail = textPart && "text" in textPart ? (textPart as { text: string }).text : "No image returned";
+
+    if (attempt < MAX_ATTEMPTS) {
+      await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+    } else {
+      throw new Error(`AI did not return an image. Details: ${detail}`);
+    }
   }
 
-  const usage = result.response.usageMetadata;
-  return {
-    imageBuffer: Buffer.from(imgPart.inlineData.data, "base64"),
-    mimeType: imgPart.inlineData.mimeType || "image/png",
-    inputTokens: usage?.promptTokenCount ?? 0,
-    outputTokens: usage?.candidatesTokenCount ?? 0,
-  };
+  // Unreachable — satisfies TypeScript
+  throw new Error("generateGhostMannequin: unexpected exit from retry loop");
 }
 
 /**
@@ -218,26 +232,40 @@ REFINEMENT RULES:
 User's refinement request: ${feedback.trim()}`;
 
   // Images FIRST, then text — vision models need visual context before instructions
-  const result = await model.generateContent({
+  const request = {
     contents: [{ role: "user", parts: [...imageParts, { text: refinementPrompt }] }],
-  });
+  };
 
-  const parts = result.response.candidates?.[0]?.content?.parts ?? [];
-  const imgPart = parts.find((p: Part) => p.inlineData?.data);
+  const MAX_ATTEMPTS = 2;
+  const RETRY_DELAY_MS = 10_000;
 
-  if (!imgPart || !("inlineData" in imgPart) || !imgPart.inlineData?.data) {
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const result = await model.generateContent(request);
+    const parts = result.response.candidates?.[0]?.content?.parts ?? [];
+    const imgPart = parts.find((p: Part) => p.inlineData?.data);
+
+    if (imgPart && "inlineData" in imgPart && imgPart.inlineData?.data) {
+      const usage = result.response.usageMetadata;
+      return {
+        imageBuffer: Buffer.from(imgPart.inlineData.data, "base64"),
+        mimeType: imgPart.inlineData.mimeType || "image/png",
+        inputTokens: usage?.promptTokenCount ?? 0,
+        outputTokens: usage?.candidatesTokenCount ?? 0,
+      };
+    }
+
     const textPart = parts.find((p) => "text" in p);
-    const detail = textPart && "text" in textPart ? textPart.text : "No image returned";
-    throw new Error(`AI did not return an image. Details: ${detail}`);
+    const detail = textPart && "text" in textPart ? (textPart as { text: string }).text : "No image returned";
+
+    if (attempt < MAX_ATTEMPTS) {
+      await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+    } else {
+      throw new Error(`AI did not return an image. Details: ${detail}`);
+    }
   }
 
-  const usage = result.response.usageMetadata;
-  return {
-    imageBuffer: Buffer.from(imgPart.inlineData.data, "base64"),
-    mimeType: imgPart.inlineData.mimeType || "image/png",
-    inputTokens: usage?.promptTokenCount ?? 0,
-    outputTokens: usage?.candidatesTokenCount ?? 0,
-  };
+  // Unreachable — satisfies TypeScript
+  throw new Error("refineGhostMannequin: unexpected exit from retry loop");
 }
 
 const SINGLE_PHOTO_BASE = (hairColor: string, hairDesc: string) =>
