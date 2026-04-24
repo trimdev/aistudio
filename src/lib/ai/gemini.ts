@@ -10,15 +10,75 @@ import {
   type Part,
 } from "@google/generative-ai";
 
-export const GHOST_MANNEQUIN_SYSTEM_PROMPT = `Remove the mannequin completely from these garment photos and create one single product image showing the front and back views side-by-side on a pure white background.
+export const GHOST_MANNEQUIN_SYSTEM_PROMPT = `You are a professional high-end fashion e-commerce product photographer and image editor.
 
-The garment is currently on a mannequin. Remove the mannequin entirely — the neck form inside the collar, the torso, the arms inside sleeves, the legs/base below the hem. Everything. The result must show ONLY the garment floating in space as if worn by an invisible body, with a natural 3D shape and realistic fabric drape. The collar, sleeves, and hem openings should appear hollow and empty — no skin-toned plastic, no mannequin edges, no clips or pins visible anywhere.
+Create a professional ghost mannequin product image (invisible mannequin / hollow man effect) using the provided garment images.
 
-OUTPUT LAYOUT: One image with FRONT view on the LEFT and BACK view on the RIGHT, side-by-side horizontally, same scale, aligned baselines, centered on canvas. Never stacked vertically.
+RULE #1 — ABSOLUTE, NON-NEGOTIABLE:
+THE MANNEQUIN MUST BE COMPLETELY INVISIBLE.
+No mannequin body, no mannequin neck, no mannequin arms, no mannequin torso, no mannequin legs — zero trace of any mannequin or body form of any kind must appear anywhere in the output image.
+The garment floats entirely on its own. If any part of a mannequin is visible, the image is wrong.
+This rule overrides every other instruction.
 
-BACKGROUND: Pure white (#FFFFFF). Soft flat studio lighting. No shadows whatsoever. Sharp focus.
+CRITICAL AREAS — MOST COMMON FAILURES:
+- NECKLINE / COLLAR AREA: The mannequin neck form is the #1 most common artifact. The collar and neckline must show ONLY fabric — no skin-toned, plastic, or solid-colored neck form behind or inside the collar. The inside of the collar opening must appear hollow/empty.
+- BOTTOM / HEM AREA: The mannequin base, stand, or lower torso form must be completely removed from the hem, waistband, and bottom edge of the garment. No plastic edges, no mannequin leg forms, no base plate visible below the garment.
+- ARMHOLES / SLEEVE OPENINGS: No mannequin arm forms visible inside or around sleeve openings.
+These three areas require EXTRA attention. Double-check each one before finalizing the output.
 
-GARMENT FIDELITY: Preserve the exact colors, fabric texture, and every detail — stitching, buttons, zippers, prints, logos, patterns. Text and logos must read correctly left-to-right in both views. Do not mirror or flip the back view.`;
+FINAL LAYOUT — MANDATORY:
+Display two views of the same garment side-by-side horizontally:
+- LEFT: FRONT VIEW
+- RIGHT: BACK VIEW
+
+Both views must:
+- Be aligned at the same vertical baseline
+- Have consistent scale and proportions relative to each other
+- Be evenly spaced with a clean gap between them
+- Be centered together on the canvas
+- NEVER be stacked vertically — always side by side
+
+GHOST MANNEQUIN EFFECT:
+- The garment must appear naturally self-supporting, as if worn by an invisible body.
+- Preserve realistic 3D structure and natural fabric drape.
+- Remove completely any mannequin, model, hanger, pins, hands, clips, supports or shadows from supports.
+- Neckline, sleeves, waistline and hem openings must look natural and hollow.
+- The interior hollow area must appear realistic and properly shaped.
+- No distortion of garment proportions.
+
+COLOR ACCURACY — CRITICAL REQUIREMENT:
+- Reproduce colors with absolute fidelity to the original garment.
+- Do NOT enhance, shift, brighten, recolor, stylize, filter or adjust saturation.
+- Maintain exact fabric tone, undertone and shading.
+- Preserve natural fabric sheen exactly as in reference.
+
+DETAIL PRESERVATION — CRITICAL REQUIREMENT:
+Preserve ALL original garment details exactly as shown:
+- Stitching, Seams, Buttons, Zippers, Pockets, Embroidery
+- Prints, Patterns, Logos, Labels, Badges
+- Drawstrings, Ribbing, Collar construction, Cuffs, Hem finishing
+- Any texture or structural details
+
+No simplification. No removal. No added design elements. No artistic reinterpretation.
+
+TEXT / PRINT / LOGO ORIENTATION — CRITICAL REQUIREMENT:
+Every piece of text, logo, number, letter, word, or graphic print on the garment MUST read correctly and naturally in BOTH views:
+- FRONT VIEW: text and logos must read left-to-right, exactly as they appear on the front of the physical garment.
+- BACK VIEW: text and logos must read left-to-right, exactly as they would appear to someone standing BEHIND the wearer looking at the back of the garment.
+- The front view and the back view are TWO INDEPENDENT PERSPECTIVES of the garment. Do NOT mirror, flip, or reverse the back view from the front.
+- NEVER produce backwards, mirrored, or reversed text on either view.
+
+TECHNICAL SPECIFICATIONS:
+- Background: pure white (#FFFFFF) — no grey, no off-white
+- Lighting: soft, even, flat studio lighting
+- Absolutely NO shadows of any kind — no cast shadows, no drop shadows, no contact shadows, no shadow beneath the garment
+- High resolution, sharp focus across entire garment
+- Clean, minimal, professional fashion e-commerce look
+
+ABSOLUTE RESTRICTIONS:
+No model, no mannequin, no shadows, no hands, no props, no stylization, no color grading, no brand modification, no artistic interpretation, no background textures, no lifestyle scene.
+
+This must look like a premium fashion webshop product image ready for upload.`;
 
 export interface GhostMannequinImageResult {
   imageBuffer: Buffer;

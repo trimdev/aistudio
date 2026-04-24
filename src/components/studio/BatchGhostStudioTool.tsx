@@ -216,9 +216,13 @@ function buildAutoFixFeedback(qa: QaResult): string {
       return `${issue} → REMOVE the arm form from inside the sleeve opening. Sleeves must appear hollow.`;
     if (lower.includes("mannequin") || lower.includes("torso") || lower.includes("bábú"))
       return `${issue} → REMOVE all visible mannequin body parts. Replace with empty space or white background.`;
+    if (lower.includes("background") || lower.includes("gray") || lower.includes("grey") || lower.includes("off-white") || lower.includes("háttér"))
+      return `${issue} → Make the background PURE WHITE (#FFFFFF). Remove all gray areas, gradients, and off-white tones.`;
+    if (lower.includes("shadow") || lower.includes("árnyék"))
+      return `${issue} → REMOVE all shadows completely. No cast shadows, drop shadows, or contact shadows anywhere.`;
     return issue;
   });
-  return `REMOVE ALL VISIBLE MANNEQUIN PARTS. Specific issues to fix:\n${issueActions.map((i) => `- ${i}`).join("\n")}`;
+  return `Fix ALL issues in this ghost mannequin image:\n${issueActions.map((i) => `- ${i}`).join("\n")}`;
 }
 
 async function attemptAutoFix(

@@ -30,8 +30,12 @@ TEXT / PRINT / LOGO DEFECTS (MUST be flagged):
 - Logos or brand names that are horizontally flipped
 - Text on the back view that is a mirror image of the front instead of reading correctly from the back perspective
 
+BACKGROUND AND SHADOW DEFECTS (these are critical — pass=false, severity="critical"):
+- Background is NOT pure white (#FFFFFF) — any gray, off-white, gradient, or colored background is a critical defect
+- Any shadows visible anywhere — cast shadows, drop shadows, contact shadows, shadows beneath the garment
+- These are NOT minor warnings — they are critical defects that must be flagged
+
 OTHER DEFECTS TO CHECK:
-- Background not pure white (gray areas, shadows, gradients)
 - Garment proportions distorted or unnatural
 - Missing or cut-off garment parts
 - Obvious AI artifacts (blurred areas, extra fingers on gloves, warped patterns)
@@ -53,9 +57,9 @@ Respond in EXACTLY this JSON format (no markdown, no code fences):
 }
 
 Rules:
-- "pass" is false if ANY mannequin visibility issue is found (critical defect)
-- "pass" can be true even with minor warnings (slight background issues, etc.)
-- "severity" is "critical" if mannequin is visible, "warning" for minor issues, "ok" if clean
+- "pass" is false if ANY mannequin visibility, background, or shadow issue is found (critical defect)
+- "pass" can be true only if background is pure white, no mannequin visible, no shadows
+- "severity" is "critical" if mannequin is visible OR background is not pure white OR shadows are present, "warning" for minor issues, "ok" if clean
 - Keep issue descriptions short and specific (e.g. "Mannequin neck form visible at collar area")
 - "regions" must contain one entry per issue, with a tight bounding box around the defect area. If no issues, return an empty array.
 - Summary must be in Hungarian
