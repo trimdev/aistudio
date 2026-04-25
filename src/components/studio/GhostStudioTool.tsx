@@ -26,6 +26,48 @@ const STEP_SCHEDULE: Array<[GenerationStep, number]> = [
   ["finalizing", 30_000],
 ];
 
+interface QaVerdict {
+  pass: boolean;
+  severity: "ok" | "warning" | "critical";
+  issues: string[];
+  summary: string;
+}
+
+// Defensive: catch mannequin mentions even if QA returned them as "warning".
+const MANNEQUIN_KEYWORDS = /mannequin|manöken|neck form|arm form|leg form|torso|shoulder form|skin[- ]?ton|plastic|hanger|clip|pin\b|akasztó|csipesz|tű\b|fej\b|nyak\b|test\b/i;
+
+function qaMentionsMannequin(qa: QaVerdict): boolean {
+  if (qa.issues.some((i) => MANNEQUIN_KEYWORDS.test(i))) return true;
+  if (qa.summary && MANNEQUIN_KEYWORDS.test(qa.summary)) return true;
+  return false;
+}
+
+// Same retry pattern as BatchGhostStudioTool — 5 retries, exponential backoff up to 64s.
+async function runQaCheck(blob: Blob): Promise<QaVerdict | undefined> {
+  const MAX_RETRIES = 5;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const form = new FormData();
+      form.append("image", blob, "check.png");
+      const res = await fetch("/api/qa-check", { method: "POST", body: form });
+      if (res.ok) return (await res.json()) as QaVerdict;
+      if (res.status === 429 || res.status >= 500) {
+        if (attempt < MAX_RETRIES) {
+          await new Promise((r) => setTimeout(r, Math.min(8_000 * Math.pow(2, attempt - 1), 64_000)));
+          continue;
+        }
+      }
+      return undefined;
+    } catch {
+      if (attempt < MAX_RETRIES) {
+        await new Promise((r) => setTimeout(r, Math.min(8_000 * Math.pow(2, attempt - 1), 64_000)));
+        continue;
+      }
+    }
+  }
+  return undefined;
+}
+
 function buildPreviews(images: UploadedImages): UploadedPreviews {
   return {
     front: images.front ? URL.createObjectURL(images.front) : null,
@@ -159,7 +201,43 @@ export function GhostStudioTool({ collectionId }: { collectionId?: string | null
       // Load versions
       await fetchVersions(data.projectId as string);
 
-      toast.success("Szellemfigura kép elkészült!");
+      toast.success("Szellemfigura kép elkészült! QA ellenőrzés folyamatban...");
+
+      // Run QA in the background — don't block UI from showing the image.
+      // 5s breathing room lets the Gemini rate-limit window recover after generation.
+      (async () => {
+        try {
+          await new Promise((r) => setTimeout(r, 5_000));
+          const imgRes = await fetch(newResult.outputUrl);
+          if (!imgRes.ok) {
+            console.warn("[qa] could not fetch output image for QA:", imgRes.status);
+            toast.warning("QA ellenőrzés nem futott le — ellenőrizd manuálisan.");
+            return;
+          }
+          const blob = await imgRes.blob();
+          const qa = await runQaCheck(blob);
+          if (!qa) {
+            toast.warning("QA ellenőrzés nem futott le — ellenőrizd manuálisan.");
+            return;
+          }
+          const mentionsMannequin = qaMentionsMannequin(qa);
+          if (!qa.pass || qa.severity === "critical" || mentionsMannequin) {
+            toast.error(`QA hibát talált: ${qa.summary}`, {
+              description: qa.issues.slice(0, 3).join(" • ") || "Generáld újra a képet.",
+              duration: 12_000,
+            });
+          } else if (qa.severity === "warning") {
+            toast.warning(`QA figyelmeztetés: ${qa.summary}`, {
+              description: qa.issues.slice(0, 3).join(" • "),
+              duration: 8_000,
+            });
+          } else {
+            toast.success("QA ellenőrzés sikeres ✓");
+          }
+        } catch (qaErr) {
+          console.error("[qa] background QA failed:", qaErr);
+        }
+      })();
     } catch (err: unknown) {
       const errName = err instanceof Error ? err.constructor.name : "Unknown";
       const errMsg = err instanceof Error ? err.message : String(err);

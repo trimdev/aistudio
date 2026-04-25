@@ -127,6 +127,16 @@ function parseProducts(files: File[]): BatchProduct[] {
 
 const QA_MAX_RETRIES = 5;
 
+// Defensive: catch mannequin mentions even if the QA model returned them as "warning".
+// Per the QA prompt, mannequin artifacts MUST be critical, but we belt-and-suspenders here.
+const MANNEQUIN_KEYWORDS = /mannequin|manöken|manöken|neck form|arm form|leg form|torso|shoulder form|skin[- ]?ton|plastic|hanger|clip|pin\b|akasztó|csipesz|tű\b|fej\b|nyak\b|test\b/i;
+
+function qaMentionsMannequin(qa: QaResult): boolean {
+  if (qa.issues.some((i) => MANNEQUIN_KEYWORDS.test(i))) return true;
+  if (qa.summary && MANNEQUIN_KEYWORDS.test(qa.summary)) return true;
+  return false;
+}
+
 // Exponential backoff: 8s, 16s, 32s, 64s, 64s — covers Gemini's 60s rolling window
 function qaRetryDelay(attempt: number): number {
   return Math.min(8_000 * Math.pow(2, attempt - 1), 64_000);
@@ -209,20 +219,24 @@ function buildAutoFixFeedback(qa: QaResult): string {
   const issueActions = qa.issues.map((issue) => {
     const lower = issue.toLowerCase();
     if (lower.includes("neck") || lower.includes("collar") || lower.includes("nyak"))
-      return `${issue} → REMOVE the neck form completely. The collar interior must be hollow/empty, showing only fabric edges.`;
+      return `${issue} → The neckline/collar must be open and natural, revealing the hollow interior. Remove any neck form — only fabric edges visible.`;
     if (lower.includes("base") || lower.includes("stand") || lower.includes("hem") || lower.includes("bottom") || lower.includes("leg") || lower.includes("alj"))
-      return `${issue} → REMOVE the mannequin base/stand/leg form below the garment. The hem must end cleanly against white background.`;
+      return `${issue} → The hem must end cleanly. Remove any mannequin base, stand, or leg form. Garment should appear self-supporting.`;
     if (lower.includes("arm") || lower.includes("sleeve") || lower.includes("kar"))
-      return `${issue} → REMOVE the arm form from inside the sleeve opening. Sleeves must appear hollow.`;
+      return `${issue} → Sleeves must be open and natural, revealing hollow interior. Remove any arm forms.`;
     if (lower.includes("mannequin") || lower.includes("torso") || lower.includes("bábú"))
-      return `${issue} → REMOVE all visible mannequin body parts. Replace with empty space or white background.`;
+      return `${issue} → The garment must appear self-supporting with natural 3D volume. Remove ALL visible mannequin parts, hangers, pins, or support elements.`;
     if (lower.includes("background") || lower.includes("gray") || lower.includes("grey") || lower.includes("off-white") || lower.includes("háttér"))
-      return `${issue} → Make the background PURE WHITE (#FFFFFF). Remove all gray areas, gradients, and off-white tones.`;
+      return `${issue} → Background must be pure white (#FFFFFF) or neutral light grey. Remove all dark areas, gradients, and color casts.`;
     if (lower.includes("shadow") || lower.includes("árnyék"))
-      return `${issue} → REMOVE all shadows completely. No cast shadows, drop shadows, or contact shadows anywhere.`;
+      return `${issue} → Use soft, even studio lighting with no harsh shadows. Remove cast shadows and drop shadows.`;
+    if (lower.includes("color") || lower.includes("szín") || lower.includes("saturat"))
+      return `${issue} → Reproduce all colors with absolute fidelity to the original garment. Do NOT alter, enhance, or shift colors.`;
+    if (lower.includes("detail") || lower.includes("missing") || lower.includes("stitch") || lower.includes("button") || lower.includes("zipper") || lower.includes("részlet"))
+      return `${issue} → Preserve ALL original details exactly: stitching, seams, buttons, zippers, pockets, embroidery, prints, patterns, logos.`;
     return issue;
   });
-  return `Fix ALL issues in this ghost mannequin image:\n${issueActions.map((i) => `- ${i}`).join("\n")}`;
+  return `Fix ALL issues in this professional ghost mannequin e-commerce product photo:\n${issueActions.map((i) => `- ${i}`).join("\n")}`;
 }
 
 async function attemptAutoFix(
@@ -791,14 +805,24 @@ function ProductDetailView({
       {/* Actions bar: download + regenerate + mentés */}
       <div className="shrink-0 border-t border-gray-100 bg-white px-5 py-3">
         <div className="flex gap-2">
-          <Button
-            onClick={() => downloadFile(product.outputUrl!, `ghost-${product.folderName}.png`)}
-            variant="outline"
-            className="flex-1 border-gray-200 gap-2 h-9 text-xs font-semibold"
-          >
-            <Download className="w-3.5 h-3.5" />
-            Letöltés
-          </Button>
+          {(() => {
+            const qaBlocksDownload = !product.qa
+              || !product.qa.pass
+              || product.qa.severity === "critical"
+              || qaMentionsMannequin(product.qa);
+            return (
+              <Button
+                onClick={() => downloadFile(product.outputUrl!, `ghost-${product.folderName}.png`)}
+                variant="outline"
+                disabled={qaBlocksDownload}
+                title={qaBlocksDownload ? "QA hiba miatt letiltva — generáld újra a képet" : undefined}
+                className="flex-1 border-gray-200 gap-2 h-9 text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Letöltés
+              </Button>
+            );
+          })()}
           <Button
             variant="outline"
             onClick={handleRegenerate}
@@ -807,19 +831,28 @@ function ProductDetailView({
             <RotateCcw className="w-3.5 h-3.5" />
             Újragenerálás
           </Button>
-          <Button
-            onClick={handleSave}
-            disabled={product.saved}
-            className={cn(
-              "flex-1 gap-2 h-9 text-xs font-semibold",
-              product.saved
-                ? "bg-green-100 text-green-700 cursor-default"
-                : "bg-green-600 hover:bg-green-700 text-white"
-            )}
-          >
-            <Save className="w-3.5 h-3.5" />
-            {product.saved ? "Mentve" : "Mentés"}
-          </Button>
+          {(() => {
+            const qaBlocksSave = !product.qa
+              || !product.qa.pass
+              || product.qa.severity === "critical"
+              || qaMentionsMannequin(product.qa);
+            return (
+              <Button
+                onClick={handleSave}
+                disabled={product.saved || qaBlocksSave}
+                title={!product.saved && qaBlocksSave ? "QA hiba miatt letiltva — generáld újra a képet" : undefined}
+                className={cn(
+                  "flex-1 gap-2 h-9 text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed",
+                  product.saved
+                    ? "bg-green-100 text-green-700 cursor-default"
+                    : "bg-green-600 hover:bg-green-700 text-white"
+                )}
+              >
+                <Save className="w-3.5 h-3.5" />
+                {product.saved ? "Mentve" : "Mentés"}
+              </Button>
+            );
+          })()}
         </div>
       </div>
 
@@ -988,8 +1021,9 @@ export function BatchGhostStudioTool({ collectionId }: { collectionId?: string |
       };
     }
 
-    // Real QA detected issues — trigger auto-fix
-    const qaDetectedIssues = !qa.pass || qa.severity === "critical";
+    // Real QA detected issues — trigger auto-fix.
+    // Defensive: also trigger if any issue/summary mentions mannequin, even at warning severity.
+    const qaDetectedIssues = !qa.pass || qa.severity === "critical" || qaMentionsMannequin(qa);
 
     if (qaDetectedIssues && projectId) {
       onStatusUpdate?.({ status: "fixing" as const, qa });
@@ -997,8 +1031,10 @@ export function BatchGhostStudioTool({ collectionId }: { collectionId?: string |
       const fixed = await attemptAutoFix(projectId, blob, qa);
       if (fixed) {
         // Post-fix QA must have actually passed to mark completed
-        // If QA didn't run (undefined) or still found critical issues → failed
-        const postFixQaPassed = fixed.qa?.pass && fixed.qa.severity !== "critical";
+        // If QA didn't run (undefined), still found critical issues, or still mentions mannequin → failed
+        const postFixQaPassed = !!fixed.qa?.pass
+          && fixed.qa.severity !== "critical"
+          && !qaMentionsMannequin(fixed.qa);
         return {
           status: postFixQaPassed ? "completed" : "failed",
           projectId,
@@ -1062,8 +1098,7 @@ export function BatchGhostStudioTool({ collectionId }: { collectionId?: string |
         setProducts((prev) => prev.map((p, idx) => idx === i ? { ...p, status: "failed" as const, error: msg } : p));
       }
 
-      // Adaptive cooldown: longer pause after auto-fix (consumed extra API calls)
-      // Must be long enough for Gemini's 60s rolling rate-limit window
+      // Adaptive cooldown between items
       if (i < products.length - 1 && !abortRef.current) {
         const cooldown = didAutoFix ? 15_000 : 8_000;
         await new Promise((r) => setTimeout(r, cooldown));
@@ -1080,7 +1115,13 @@ export function BatchGhostStudioTool({ collectionId }: { collectionId?: string |
   }, []);
 
   const handleDownloadZip = useCallback(async () => {
-    const completed = products.filter((p) => p.status === "completed" && p.outputBlob && p.qa?.pass && p.qa?.severity !== "critical");
+    const completed = products.filter((p) =>
+      p.status === "completed"
+      && p.outputBlob
+      && p.qa?.pass
+      && p.qa.severity !== "critical"
+      && !qaMentionsMannequin(p.qa)
+    );
     if (completed.length === 0) {
       toast.error("Nincs letölthető eredmény.");
       return;

@@ -10,75 +10,51 @@ import {
   type Part,
 } from "@google/generative-ai";
 
-export const GHOST_MANNEQUIN_SYSTEM_PROMPT = `You are a professional high-end fashion e-commerce product photographer and image editor.
+/**
+ * System instruction for ghost mannequin generation.
+ * Goes into the `systemInstruction` field — NOT into the user message.
+ * Creates professional e-commerce ghost mannequin (invisible mannequin / hollow man)
+ * product photos from uploaded garment reference images.
+ */
+export const GHOST_MANNEQUIN_SYSTEM_INSTRUCTION = `You are an expert fashion e-commerce product photographer specializing in the ghost mannequin (invisible mannequin / hollow man) technique.
 
-Create a professional ghost mannequin product image (invisible mannequin / hollow man effect) using the provided garment images.
+Your task: create a professional fashion e-commerce ghost mannequin product photo from the uploaded garment images.
 
-RULE #1 — ABSOLUTE, NON-NEGOTIABLE:
-THE MANNEQUIN MUST BE COMPLETELY INVISIBLE.
-No mannequin body, no mannequin neck, no mannequin arms, no mannequin torso, no mannequin legs — zero trace of any mannequin or body form of any kind must appear anywhere in the output image.
-The garment floats entirely on its own. If any part of a mannequin is visible, the image is wrong.
-This rule overrides every other instruction.
+LAYOUT:
+Show two views side by side: [FRONT VIEW] | [BACK VIEW]
+Both views must be the same scale, aligned vertically, and centered on the canvas.
 
-CRITICAL AREAS — MOST COMMON FAILURES:
-- NECKLINE / COLLAR AREA: The mannequin neck form is the #1 most common artifact. The collar and neckline must show ONLY fabric — no skin-toned, plastic, or solid-colored neck form behind or inside the collar. The inside of the collar opening must appear hollow/empty.
-- BOTTOM / HEM AREA: The mannequin base, stand, or lower torso form must be completely removed from the hem, waistband, and bottom edge of the garment. No plastic edges, no mannequin leg forms, no base plate visible below the garment.
-- ARMHOLES / SLEEVE OPENINGS: No mannequin arm forms visible inside or around sleeve openings.
-These three areas require EXTRA attention. Double-check each one before finalizing the output.
+MANNEQUIN EFFECT (CRITICAL):
+- The garment must appear self-supporting, as if worn by an invisible body
+- Natural 3D volume, realistic fabric drape and structure
+- No visible mannequin, hanger, pins, hands, or any support elements
+- The neckline, sleeves and hem should be open and natural, revealing the hollow interior of the garment
+- NECKLINE / COLLAR: Inside of collar must be hollow — only fabric edges visible, no neck form
+- BOTTOM / HEM: Garment hem ends cleanly, nothing below it — no base, stand, or leg forms
+- ARMHOLES / SLEEVES: Sleeve openings must appear hollow — no arm forms visible
 
-FINAL LAYOUT — MANDATORY:
-Display two views of the same garment side-by-side horizontally:
-- LEFT: FRONT VIEW
-- RIGHT: BACK VIEW
+COLOR ACCURACY (CRITICAL):
+- Reproduce all colors with absolute fidelity to the original garment
+- Do NOT alter, enhance, saturate or shift any colors
+- Match fabric texture and sheen exactly as in the reference images
 
-Both views must:
-- Be aligned at the same vertical baseline
-- Have consistent scale and proportions relative to each other
-- Be evenly spaced with a clean gap between them
-- Be centered together on the canvas
-- NEVER be stacked vertically — always side by side
+DETAIL PRESERVATION (CRITICAL):
+- Preserve ALL original details exactly: stitching, seams, buttons, zippers, pockets, embroidery, prints, patterns, logos, labels, badges, drawstrings, ribbing, collar construction and any other design elements
+- No details may be omitted, simplified or altered
+- Text/logos must read correctly in both views (never mirrored)
 
-GHOST MANNEQUIN EFFECT:
-- The garment must appear naturally self-supporting, as if worn by an invisible body.
-- Preserve realistic 3D structure and natural fabric drape.
-- Remove completely any mannequin, model, hanger, pins, hands, clips, supports or shadows from supports.
-- Neckline, sleeves, waistline and hem openings must look natural and hollow.
-- The interior hollow area must appear realistic and properly shaped.
-- No distortion of garment proportions.
+TECHNICAL SPECS:
+- Pure white background (#FFFFFF) or neutral light grey
+- Soft, even studio lighting — no harsh shadows
+- High-resolution, sharp focus across the entire garment
+- Consistent scale between front and back views
+- Style: clean, minimal, professional fashion e-commerce product photo`;
 
-COLOR ACCURACY — CRITICAL REQUIREMENT:
-- Reproduce colors with absolute fidelity to the original garment.
-- Do NOT enhance, shift, brighten, recolor, stylize, filter or adjust saturation.
-- Maintain exact fabric tone, undertone and shading.
-- Preserve natural fabric sheen exactly as in reference.
-
-DETAIL PRESERVATION — CRITICAL REQUIREMENT:
-Preserve ALL original garment details exactly as shown:
-- Stitching, Seams, Buttons, Zippers, Pockets, Embroidery
-- Prints, Patterns, Logos, Labels, Badges
-- Drawstrings, Ribbing, Collar construction, Cuffs, Hem finishing
-- Any texture or structural details
-
-No simplification. No removal. No added design elements. No artistic reinterpretation.
-
-TEXT / PRINT / LOGO ORIENTATION — CRITICAL REQUIREMENT:
-Every piece of text, logo, number, letter, word, or graphic print on the garment MUST read correctly and naturally in BOTH views:
-- FRONT VIEW: text and logos must read left-to-right, exactly as they appear on the front of the physical garment.
-- BACK VIEW: text and logos must read left-to-right, exactly as they would appear to someone standing BEHIND the wearer looking at the back of the garment.
-- The front view and the back view are TWO INDEPENDENT PERSPECTIVES of the garment. Do NOT mirror, flip, or reverse the back view from the front.
-- NEVER produce backwards, mirrored, or reversed text on either view.
-
-TECHNICAL SPECIFICATIONS:
-- Background: pure white (#FFFFFF) — no grey, no off-white
-- Lighting: soft, even, flat studio lighting
-- Absolutely NO shadows of any kind — no cast shadows, no drop shadows, no contact shadows, no shadow beneath the garment
-- High resolution, sharp focus across entire garment
-- Clean, minimal, professional fashion e-commerce look
-
-ABSOLUTE RESTRICTIONS:
-No model, no mannequin, no shadows, no hands, no props, no stylization, no color grading, no brand modification, no artistic interpretation, no background textures, no lifestyle scene.
-
-This must look like a premium fashion webshop product image ready for upload.`;
+/**
+ * @deprecated Use GHOST_MANNEQUIN_SYSTEM_INSTRUCTION instead.
+ * Kept as alias for any external references.
+ */
+export const GHOST_MANNEQUIN_SYSTEM_PROMPT = GHOST_MANNEQUIN_SYSTEM_INSTRUCTION;
 
 export interface GhostMannequinImageResult {
   imageBuffer: Buffer;
@@ -112,8 +88,15 @@ export async function generateGhostMannequin(
   const apiKey = resolveApiKey(clientApiKey);
   const genAI = new GoogleGenerativeAI(apiKey);
 
+  // Build system instruction: base rules + optional workspace memory
+  let sysInstruction = GHOST_MANNEQUIN_SYSTEM_INSTRUCTION;
+  if (memoryBlock?.trim()) {
+    sysInstruction += `\n\nWorkspace notes (additional criteria):\n${memoryBlock.trim()}`;
+  }
+
   const model = genAI.getGenerativeModel({
     model: "gemini-2.5-flash-image",
+    systemInstruction: sysInstruction,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     generationConfig: { responseModalities: ["TEXT", "IMAGE"] } as any,
     safetySettings: [
@@ -129,7 +112,6 @@ export async function generateGhostMannequin(
   });
 
   // Images as contiguous block — no interleaved text labels.
-  // Google docs: "place the text prompt after the image part"
   const imageParts: Part[] = imageBuffers.map((buf, i) => ({
     inlineData: {
       data: buf.toString("base64"),
@@ -137,25 +119,25 @@ export async function generateGhostMannequin(
     },
   }));
 
-  // Image role context goes INTO the prompt text, not as separate parts between images
+  // Concise user-level command — the detailed rules are in systemInstruction
   const imageRoles = imageBuffers.length === 3
-    ? "The three uploaded images are: (1) FRONT view, (2) BACK view, (3) SIDE view for reference."
-    : "The two uploaded images are: (1) FRONT view, (2) BACK view.";
+    ? "Image 1 = FRONT view, Image 2 = BACK view, Image 3 = SIDE/DETAIL reference."
+    : "Image 1 = FRONT view, Image 2 = BACK view.";
 
-  let fullPrompt = `${imageRoles}\n\n${GHOST_MANNEQUIN_SYSTEM_PROMPT}`;
-  if (memoryBlock?.trim()) {
-    fullPrompt += `\n\n${memoryBlock.trim()}`;
-  }
+  let userPrompt = `${imageRoles}
+
+Create a professional ghost mannequin product photo from these garment images. The garment must appear self-supporting with natural 3D volume — no mannequin, hanger, or support visible. Hollow openings at neckline, sleeves, and hem. Pure white (#FFFFFF) background, soft even studio lighting. Output side-by-side: FRONT view on LEFT, BACK view on RIGHT. Preserve all colors, textures, and details with absolute fidelity.`;
+
   if (refinePrompt?.trim()) {
-    fullPrompt += `\n\nAdditional refinement from the user: ${refinePrompt.trim()}`;
+    userPrompt += `\n\nAdditional user instructions: ${refinePrompt.trim()}`;
   }
 
-  // Images FIRST as contiguous block, then prompt text — matches AI Studio pattern
+  // Images FIRST, then concise edit command
   const request = {
     contents: [
       {
-        role: "user",
-        parts: [...imageParts, { text: fullPrompt }],
+        role: "user" as const,
+        parts: [...imageParts, { text: userPrompt }],
       },
     ],
   };
@@ -219,8 +201,33 @@ export async function refineGhostMannequin(
   const apiKey = resolveApiKey(clientApiKey);
   const genAI = new GoogleGenerativeAI(apiKey);
 
+  // System instruction for refinement context
+  let sysInstruction = `You are an expert fashion e-commerce product photographer specializing in ghost mannequin (invisible mannequin / hollow man) photography.
+Your task: fix issues in a ghost mannequin composite image while preserving the professional e-commerce product photo quality.
+
+RULE #1 — ABSOLUTE, NON-NEGOTIABLE: THE MANNEQUIN MUST BE COMPLETELY INVISIBLE
+- The garment must appear self-supporting with natural 3D volume — no mannequin, hanger, clips, pins, hands, or any support hardware visible
+- NECKLINE / COLLAR: the inside of the collar must be hollow — only fabric edges visible, no neck form, no plastic, no skin-toned surfaces
+- ARMHOLES / SLEEVES: sleeve openings must appear hollow — no arm forms, no plastic sheen, no skin-tone bleeding through
+- HEM / BOTTOM: garment ends cleanly with nothing below it — no base, stand, leg form, or plastic surface
+- No skin-toned, tan, beige or plastic-looking areas anywhere where the mannequin was not fully removed
+- No specular highlights or matte plastic finish that would indicate synthetic mannequin material
+
+OTHER RULES:
+- Reproduce all colors with absolute fidelity — do NOT alter, enhance, saturate, or shift any colors
+- Preserve ALL original details: stitching, seams, buttons, zippers, pockets, prints, patterns, logos, labels, badges
+- Preserve the side-by-side layout (FRONT on LEFT, BACK on RIGHT), consistent scale between views
+- Pure white (#FFFFFF) background only — no grey, no off-white, no gradient
+- Soft, even studio lighting — absolutely no harsh shadows, drop shadows, or strong contact shadows
+- Text/logos must read correctly in both views (never mirrored, never reversed)
+- Maintain natural fabric drape and 3D volume — do not flatten the garment to hide mannequin removal`;
+  if (memoryBlock?.trim()) {
+    sysInstruction += `\n\nWorkspace notes:\n${memoryBlock.trim()}`;
+  }
+
   const model = genAI.getGenerativeModel({
     model: "gemini-2.5-flash-image",
+    systemInstruction: sysInstruction,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     generationConfig: { responseModalities: ["TEXT", "IMAGE"] } as any,
     safetySettings: [
@@ -255,30 +262,28 @@ export async function refineGhostMannequin(
   ];
 
   const inputContext = hasInputs
-    ? `The first ${inputBuffers.length} image(s) are the ORIGINAL garment photo(s) (front, back, and optionally side view). The next image is the CURRENT composite result that must be refined.`
-    : `The first image is the CURRENT composite result that must be refined.`;
+    ? `Images 1-${inputBuffers.length}: ORIGINAL garment photos. Next image: CURRENT composite to fix.`
+    : `First image: CURRENT composite to fix.`;
 
   const annotationContext = hasAnnotation
-    ? `The LAST image is an annotation overlay where the user has drawn RED marks over the specific area that needs correction. Focus ONLY on those red-marked regions.`
+    ? ` Last image: RED annotation marks showing exactly where the issues are.`
     : "";
 
-  const memorySection = memoryBlock?.trim() ? `\n\n${memoryBlock.trim()}` : "";
+  // Concise edit command — details are in systemInstruction
+  const refinementPrompt = `${inputContext}${annotationContext}
 
-  const refinementPrompt = `Edit this ghost mannequin product photo to fix the issues described below.
+FIX THIS: ${feedback.trim()}
 
-${inputContext}${annotationContext ? `\n${annotationContext}` : ""}
+CRITICAL: Remove ALL mannequin artifacts:
+- Make the neckline hollow — no neck form inside the collar, no plastic, no skin-tone
+- Make armholes hollow — no arm forms inside sleeves, no plastic sheen
+- Make hem clean — no base, leg form, or stand below the garment
+- Background must be pure white (#FFFFFF) — no grey, no shadows of any kind
+Keep the side-by-side layout, all colors, and every fabric detail exactly intact.`;
 
-WHAT TO FIX: ${feedback.trim()}
-
-RULES:
-- Keep the side-by-side layout (front LEFT, back RIGHT) and overall composition.
-- Remove any visible mannequin parts completely — replace with empty/hollow space and white background. The garment must float on its own with no mannequin visible anywhere.
-- Use the original garment photos as reference for what the fabric should look like.
-- Preserve garment colors, details, prints, and text. Background stays pure white (#FFFFFF), no shadows.${memorySection}`;
-
-  // Images FIRST, then text — vision models need visual context before instructions
+  // Images FIRST, then text
   const request = {
-    contents: [{ role: "user", parts: [...imageParts, { text: refinementPrompt }] }],
+    contents: [{ role: "user" as const, parts: [...imageParts, { text: refinementPrompt }] }],
   };
 
   const MAX_ATTEMPTS = 2;
