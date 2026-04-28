@@ -485,7 +485,7 @@ export async function generateModelPhoto(
   const genAI  = new GoogleGenerativeAI(apiKey);
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash-image",
+    model: "gemini-3-pro-image-preview",
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     generationConfig: { responseModalities: ["TEXT", "IMAGE"] } as any,
     safetySettings: [
@@ -602,7 +602,7 @@ export async function generateDesignModelPhoto(
   const genAI  = new GoogleGenerativeAI(apiKey);
 
   const geminiModel = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash-image",
+    model: "gemini-3-pro-image-preview",
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     generationConfig: { responseModalities: ["TEXT", "IMAGE"] } as any,
     safetySettings: [
