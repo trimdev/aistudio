@@ -611,6 +611,13 @@ function ErrorState({ message }: { message: string }) {
 }
 
 
+export type QaPanelState =
+  | { kind: "idle" }
+  | { kind: "running" }
+  | { kind: "passed" }
+  | { kind: "failed"; summary: string; issues: string[] }
+  | { kind: "no_run" };
+
 interface PreviewPanelProps {
   images: UploadedImages;
   previews: UploadedPreviews;
@@ -621,27 +628,139 @@ interface PreviewPanelProps {
   activeVersionIndex: number;
   onSelectVersion: (index: number) => void;
   onRefined: (result: GenerationResult) => void;
+  qaState?: QaPanelState;
+  pendingPreviewUrl?: string | null;
+  onAcceptAnyway?: () => void;
+  onRegenerate?: () => void;
+}
+
+function QaRunningState({ pendingPreviewUrl }: { pendingPreviewUrl: string | null | undefined }) {
+  const { t } = useLanguage();
+  return (
+    <div className="flex flex-col items-center justify-center h-full gap-6 px-8">
+      {pendingPreviewUrl && (
+        <div className="rounded-2xl overflow-hidden border border-gray-200 shadow-sm bg-white opacity-60 blur-[1px]"
+          style={{ width: 200, height: 250 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={pendingPreviewUrl} alt="pending" className="w-full h-full object-cover" />
+        </div>
+      )}
+      <div className="flex items-center gap-3">
+        <Loader2 className="w-5 h-5 animate-spin text-amber-600" />
+        <div>
+          <p className="text-base font-semibold text-gray-900">{t("qa_running")}</p>
+          <p className="text-xs text-gray-500 mt-0.5 max-w-xs">{t("qa_running_subtitle")}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function QaFailedState({
+  summary, issues, pendingPreviewUrl, onAcceptAnyway, onRegenerate,
+}: {
+  summary: string;
+  issues: string[];
+  pendingPreviewUrl: string | null | undefined;
+  onAcceptAnyway?: () => void;
+  onRegenerate?: () => void;
+}) {
+  const { t } = useLanguage();
+  return (
+    <div className="flex flex-col items-center justify-center h-full gap-5 px-8 py-6">
+      {pendingPreviewUrl && (
+        <div className="relative rounded-2xl overflow-hidden border-2 border-red-300 bg-white"
+          style={{ width: 180, height: 225 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={pendingPreviewUrl} alt="rejected" className="w-full h-full object-cover opacity-70" />
+          <div className="absolute inset-0 bg-red-500/10" />
+        </div>
+      )}
+      <div className="w-full max-w-md rounded-xl border border-red-200 bg-red-50 p-4 space-y-2">
+        <p className="text-sm font-bold text-red-800">{t("qa_failed_title")}</p>
+        <p className="text-sm text-red-700 leading-relaxed">{summary}</p>
+        {issues.length > 0 && (
+          <ul className="text-xs text-red-700 list-disc list-inside space-y-0.5 mt-2">
+            {issues.slice(0, 5).map((issue, i) => (
+              <li key={i}>{issue}</li>
+            ))}
+          </ul>
+        )}
+        <p className="text-xs text-red-600 pt-1">{t("qa_failed_desc")}</p>
+      </div>
+      <div className="flex gap-2 w-full max-w-md">
+        {onRegenerate && (
+          <Button onClick={onRegenerate} className="flex-1 bg-gray-900 text-white hover:bg-gray-700">
+            {t("qa_regenerate")}
+          </Button>
+        )}
+        {onAcceptAnyway && (
+          <Button onClick={onAcceptAnyway} variant="outline" className="flex-1 border-red-200 text-red-700 hover:bg-red-50">
+            {t("qa_accept_anyway")}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function QaNoRunState({
+  pendingPreviewUrl, onRegenerate,
+}: {
+  pendingPreviewUrl: string | null | undefined;
+  onRegenerate?: () => void;
+}) {
+  const { t } = useLanguage();
+  return (
+    <div className="flex flex-col items-center justify-center h-full gap-5 px-8 py-6">
+      {pendingPreviewUrl && (
+        <div className="rounded-2xl overflow-hidden border-2 border-amber-300 bg-white opacity-60"
+          style={{ width: 180, height: 225 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={pendingPreviewUrl} alt="qa-no-run" className="w-full h-full object-cover" />
+        </div>
+      )}
+      <div className="w-full max-w-md rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-2">
+        <p className="text-sm font-bold text-amber-900">{t("qa_no_run_title")}</p>
+        <p className="text-xs text-amber-800">{t("qa_no_run_desc")}</p>
+      </div>
+      {onRegenerate && (
+        <Button onClick={onRegenerate} className="bg-gray-900 text-white hover:bg-gray-700">
+          {t("qa_regenerate")}
+        </Button>
+      )}
+    </div>
+  );
 }
 
 export function PreviewPanel({
   images, previews, step, result, error,
   versions, activeVersionIndex, onSelectVersion, onRefined,
+  qaState, pendingPreviewUrl, onAcceptAnyway, onRegenerate,
 }: PreviewPanelProps) {
   const { t } = useLanguage();
   const hasPreviews = previews.front || previews.back;
-  const isLoading = step !== "idle" && step !== "done" && step !== "error";
+  const isGenerating = step !== "idle" && step !== "done" && step !== "error";
+  const qaKind = qaState?.kind ?? "idle";
+  const isQaRunning = qaKind === "running";
+  const isLoading = isGenerating || isQaRunning;
 
   return (
     <div className="flex-1 min-w-0 border-r border-gray-100 bg-gray-50/50 flex flex-col h-full overflow-hidden">
       <div className="px-5 pt-5 pb-3 border-b border-gray-100 bg-white shrink-0">
         <div className="flex items-center gap-2">
           <h2 className="text-base font-bold text-gray-900">{t("prev_title")}</h2>
-          {step === "done" && result && (
+          {step === "done" && result && qaKind !== "running" && (
             <span className="text-xs font-semibold bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
               {t("prev_generated")}
             </span>
           )}
-          {isLoading && (
+          {isQaRunning && (
+            <span className="text-xs font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full animate-pulse">
+              {t("qa_pending_badge")}
+            </span>
+          )}
+          {isGenerating && !isQaRunning && (
             <span className="text-xs font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full animate-pulse">
               {t("set_generating")}
             </span>
@@ -651,6 +770,22 @@ export function PreviewPanel({
 
       <div className="flex-1 min-h-0 overflow-auto flex flex-col">
         {error ? <ErrorState message={error} />
+          : isQaRunning ? <QaRunningState pendingPreviewUrl={pendingPreviewUrl} />
+          : qaKind === "failed" && qaState && qaState.kind === "failed" ? (
+            <QaFailedState
+              summary={qaState.summary}
+              issues={qaState.issues}
+              pendingPreviewUrl={pendingPreviewUrl}
+              onAcceptAnyway={onAcceptAnyway}
+              onRegenerate={onRegenerate}
+            />
+          )
+          : qaKind === "no_run" ? (
+            <QaNoRunState
+              pendingPreviewUrl={pendingPreviewUrl}
+              onRegenerate={onRegenerate}
+            />
+          )
           : step === "done" && result ? (
             <ResultView
               result={result}

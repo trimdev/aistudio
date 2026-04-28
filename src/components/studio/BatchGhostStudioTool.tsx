@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { compressImage, downloadFile } from "@/lib/image-utils";
+import { useLanguage } from "@/components/providers/LanguageProvider";
 import JSZip from "jszip";
 
 // Types
@@ -125,7 +126,7 @@ function parseProducts(files: File[]): BatchProduct[] {
 
 // QA check with retry
 
-const QA_MAX_RETRIES = 5;
+const QA_MAX_RETRIES = 3;
 
 // Defensive: catch mannequin mentions even if the QA model returned them as "warning".
 // Per the QA prompt, mannequin artifacts MUST be critical, but we belt-and-suspenders here.
@@ -137,9 +138,9 @@ function qaMentionsMannequin(qa: QaResult): boolean {
   return false;
 }
 
-// Exponential backoff: 8s, 16s, 32s, 64s, 64s — covers Gemini's 60s rolling window
+// Exponential backoff: 4s, 8s, 16s — fail fast, let user retry the batch
 function qaRetryDelay(attempt: number): number {
-  return Math.min(8_000 * Math.pow(2, attempt - 1), 64_000);
+  return Math.min(4_000 * Math.pow(2, attempt - 1), 16_000);
 }
 
 async function runQaWithRetry(blob: Blob): Promise<QaResult | undefined> {
@@ -174,46 +175,7 @@ async function runQaWithRetry(blob: Blob): Promise<QaResult | undefined> {
   return undefined;
 }
 
-async function generateAnnotationFromRegions(
-  imageBlob: Blob,
-  regions: QaRegion[]
-): Promise<Blob> {
-  const img = await createImageBitmap(imageBlob);
-  const canvas = document.createElement("canvas");
-  canvas.width = img.width;
-  canvas.height = img.height;
-  const ctx = canvas.getContext("2d")!;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  ctx.lineWidth = Math.max(6, Math.round(Math.min(canvas.width, canvas.height) / 80));
-
-  for (const region of regions) {
-    const [ymin, xmin, ymax, xmax] = region.bbox;
-    const x1 = (xmin / 1000) * canvas.width;
-    const y1 = (ymin / 1000) * canvas.height;
-    const x2 = (xmax / 1000) * canvas.width;
-    const y2 = (ymax / 1000) * canvas.height;
-
-    const cx = (x1 + x2) / 2;
-    const cy = (y1 + y2) / 2;
-    const rx = Math.max(((x2 - x1) / 2) * 1.3, 25);
-    const ry = Math.max(((y2 - y1) / 2) * 1.3, 25);
-
-    // Semi-transparent filled ellipse so Gemini can clearly see the problem area
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(239, 68, 68, 0.35)";
-    ctx.fill();
-    ctx.strokeStyle = "rgba(239, 68, 68, 0.9)";
-    ctx.stroke();
-  }
-
-  return new Promise((resolve) => {
-    canvas.toBlob((blob) => resolve(blob!), "image/png");
-  });
-}
-
-const AUTO_FIX_MAX_ATTEMPTS = 2;
+const AUTO_FIX_MAX_ATTEMPTS = 1;
 
 function buildAutoFixFeedback(qa: QaResult): string {
   const issueActions = qa.issues.map((issue) => {
@@ -239,72 +201,106 @@ function buildAutoFixFeedback(qa: QaResult): string {
   return `Fix ALL issues in this professional ghost mannequin e-commerce product photo:\n${issueActions.map((i) => `- ${i}`).join("\n")}`;
 }
 
-async function attemptAutoFix(
-  projectId: string,
-  imageBlob: Blob,
-  qa: QaResult
-): Promise<{ outputUrl: string; outputBlob: Blob; qa?: QaResult } | null> {
-  let currentBlob = imageBlob;
-  let currentQa = qa;
-  let bestResult: { outputUrl: string; outputBlob: Blob; qa?: QaResult } | null = null;
-  let bestIssueCount = qa.issues?.length ?? Infinity;
+/**
+ * Build the refinePrompt hint passed to /api/generate on the regenerate-based auto-fix.
+ * Lists previous defects (with per-issue corrective actions from buildAutoFixFeedback)
+ * so the prompt knows what to avoid this time.
+ */
+function buildRegenerateHint(qa: QaResult): string {
+  const detailedDefects = qa.issues?.length
+    ? buildAutoFixFeedback(qa)
+    : "- (QA flagged the previous output but provided no specific list — likely mannequin/support visible.)";
+  return [
+    "PREVIOUS ATTEMPT FAILED QA. The previous output had these visible defects:",
+    detailedDefects,
+    "",
+    "Regenerate from scratch and ensure NONE of these defects appear.",
+    "In particular: NO visible mannequin parts (neck form, arm form, torso, leg form, base, stand, hangers, pins, clips), NO skin tones, NO plastic surfaces. The garment must appear self-supporting with hollow neckline/sleeves.",
+  ].join("\n");
+}
+
+/**
+ * Regenerate-based auto-fix.
+ *
+ * Calls `/api/generate` again with the SAME inputs (front/back/side) and a `refinePrompt`
+ * hint listing the previous defects, then re-runs QA. Loops up to AUTO_FIX_MAX_ATTEMPTS.
+ *
+ * Returns:
+ *   - { outputUrl, outputBlob, qa } of the LAST attempt (or best by fewest issues if pass).
+ *   - null if every attempt failed at the network layer with no usable output.
+ *
+ * NOTE: server-side `/api/generate` already injects workspace memory — do not re-add it here.
+ */
+async function attemptAutoFixViaRegenerate(
+  product: BatchProduct,
+  initialQa: QaResult,
+  collectionId: string | null
+): Promise<{ outputUrl: string; outputBlob: Blob; qa?: QaResult; projectId?: string } | null> {
+  let currentQa = initialQa;
+  let lastResult: { outputUrl: string; outputBlob: Blob; qa?: QaResult; projectId?: string } | null = null;
 
   for (let attempt = 1; attempt <= AUTO_FIX_MAX_ATTEMPTS; attempt++) {
+    const feedback = buildRegenerateHint(currentQa);
+    console.log("[batch] regenerate attempt", attempt, "feedback:", feedback);
+
     try {
-      // Generate annotation overlay from QA bounding box regions
-      let annotationBlob: Blob | null = null;
-      if (currentQa.regions?.length) {
-        annotationBlob = await generateAnnotationFromRegions(currentBlob, currentQa.regions);
-      }
+      const [cFront, cBack, cSide] = await Promise.all([
+        compressImage(product.front),
+        compressImage(product.back),
+        product.side ? compressImage(product.side) : Promise.resolve(null),
+      ]);
 
-      const feedback = buildAutoFixFeedback(currentQa);
+      const formData = new FormData();
+      formData.append("front", cFront, "front.jpg");
+      formData.append("back", cBack, "back.jpg");
+      if (cSide) formData.append("side", cSide, "side.jpg");
+      formData.append("projectName", product.folderName);
+      formData.append("refinePrompt", feedback);
+      if (collectionId) formData.append("collectionId", collectionId);
 
-      const refineForm = new FormData();
-      refineForm.append("projectId", projectId);
-      refineForm.append("feedback", feedback);
-      if (annotationBlob) refineForm.append("annotation", annotationBlob, "annotation.png");
-
-      const refineRes = await fetch("/api/refine", { method: "POST", body: refineForm });
-      if (!refineRes.ok) break;
-
-      const refineData = await refineRes.json();
-      const newOutputUrl = refineData.outputUrl as string;
-      const newBlob = await fetch(newOutputUrl).then((r) => r.blob());
-
-      // Breathing room before QA — let rate limit recover after refine call
-      await new Promise((r) => setTimeout(r, 5_000));
-
-      // Re-run QA on the refined result
-      const newQa = await runQaWithRetry(newBlob);
-
-      // If QA couldn't run (API failure), keep trying — don't accept blindly
-      if (!newQa) {
-        // Still use the refined image for the next attempt but don't update bestResult without QA
-        currentBlob = newBlob;
+      const res = await fetch("/api/generate", { method: "POST", body: formData });
+      if (!res.ok) {
+        // Network/server error — try next attempt if any
         continue;
       }
 
-      // Track the best result by fewest issues (not just the latest)
-      const newIssueCount = newQa.issues?.length ?? 0;
-      if (!bestResult || newIssueCount < bestIssueCount) {
-        bestResult = { outputUrl: newOutputUrl, outputBlob: newBlob, qa: newQa };
-        bestIssueCount = newIssueCount;
+      const data = await res.json();
+      const newOutputUrl = data.outputUrl as string;
+      const newProjectId = (data.projectId as string) || undefined;
+      const newBlob = await fetch(newOutputUrl).then((r) => r.blob());
+
+      await new Promise((r) => setTimeout(r, 1_000));
+
+      const newQa = await runQaWithRetry(newBlob);
+      console.log("[batch] post-regen QA:", newQa);
+
+      // Always preserve the latest output even if QA didn't run, so user sees what was produced
+      lastResult = {
+        outputUrl: newOutputUrl,
+        outputBlob: newBlob,
+        qa: newQa,
+        projectId: newProjectId,
+      };
+
+      // QA failed to run — keep trying without accepting blindly
+      if (!newQa) {
+        continue;
       }
 
-      // If QA passed, stop retrying
-      if (newQa.pass && newQa.severity !== "critical") {
-        return bestResult;
+      // Success criteria: pass + not critical + no mannequin mention
+      if (newQa.pass && newQa.severity !== "critical" && !qaMentionsMannequin(newQa)) {
+        return lastResult;
       }
 
-      // QA still failing — use refined image as input for next attempt
-      currentBlob = newBlob;
+      // QA still failing — feed its issues into the next regenerate attempt
       currentQa = newQa;
-    } catch {
-      break;
+    } catch (err) {
+      console.log("[batch] regenerate attempt", attempt, "threw:", err);
+      // continue loop; lastResult preserved from previous successful attempt if any
     }
   }
 
-  return bestResult;
+  return lastResult;
 }
 
 function ProductCard({
@@ -350,15 +346,27 @@ function ProductCard({
         {product.error && (
           <p className="text-[11px] text-red-500 mt-0.5 truncate">{product.error}</p>
         )}
-        {product.qa && (
-          <div className={cn("flex items-center gap-1 mt-0.5",
-            product.qa.severity === "critical" ? "text-red-500" :
-            product.qa.severity === "warning" ? "text-amber-500" : "text-green-500"
-          )}>
-            {product.qa.severity === "ok" ? <ShieldCheck className="w-3 h-3" /> : <ShieldAlert className="w-3 h-3" />}
-            <span className="text-[11px] truncate">{product.qa.summary}</span>
-          </div>
-        )}
+        {product.qa && (() => {
+          // Derive QA color from product.status to keep list/detail in sync.
+          // The wrapper verdict (status) is the source of truth: if status === "failed",
+          // qa.severity may still read "ok" (e.g., mannequin-mention rejection), but the
+          // product as a whole has failed — show red. Only show green when truly completed.
+          const qaFailed = product.status === "failed";
+          const qaPending = product.status === "fixing" || product.status === "processing";
+          const sev = product.qa.severity;
+          const colorClass = qaFailed
+            ? "text-red-500"
+            : qaPending
+            ? sev === "critical" ? "text-red-500" : sev === "warning" ? "text-amber-500" : "text-amber-500"
+            : sev === "critical" ? "text-red-500" : sev === "warning" ? "text-amber-500" : "text-green-500";
+          const showCheck = !qaFailed && !qaPending && sev === "ok";
+          return (
+            <div className={cn("flex items-center gap-1 mt-0.5", colorClass)}>
+              {showCheck ? <ShieldCheck className="w-3 h-3" /> : <ShieldAlert className="w-3 h-3" />}
+              <span className="text-[11px] truncate">{product.qa.summary}</span>
+            </div>
+          );
+        })()}
         {!product.qa && product.status === "completed" && (
           <div className="flex items-center gap-1 mt-0.5 text-gray-400">
             <AlertCircle className="w-3 h-3" />
@@ -390,6 +398,7 @@ function ProductDetailView({
   onBack: () => void;
   onProductUpdated: (id: string, updates: Partial<BatchProduct>) => void;
 }) {
+  const { t } = useLanguage();
   const [feedback, setFeedback] = useState("");
   const [isRefining, setIsRefining] = useState(false);
   const [drawingMode, setDrawingMode] = useState(false);
@@ -549,22 +558,25 @@ function ProductDetailView({
 
       const projectId = data.projectId as string;
 
-      // Only auto-fix when QA actually ran and detected issues (not on API failures)
-      const qaDetectedIssues = qa && (!qa.pass || qa.severity === "critical");
+      // Only auto-fix when QA actually ran and detected issues (not on API failures).
+      // Defensive: also trigger if any issue/summary mentions mannequin keywords.
+      const qaDetectedIssues = qa && (!qa.pass || qa.severity === "critical" || qaMentionsMannequin(qa));
 
-      if (qaDetectedIssues && projectId) {
+      if (qaDetectedIssues) {
         onProductUpdated(product.id, { status: "fixing", qa });
 
-        const fixed = await attemptAutoFix(projectId, blob, qa);
+        const fixed = await attemptAutoFixViaRegenerate(product, qa, null);
         if (fixed) {
-          const postFixQaPassed = fixed.qa?.pass && fixed.qa.severity !== "critical";
+          const postFixQaPassed = !!fixed.qa?.pass
+            && fixed.qa.severity !== "critical"
+            && !qaMentionsMannequin(fixed.qa);
           onProductUpdated(product.id, {
             status: postFixQaPassed ? "completed" : "failed",
-            projectId,
+            projectId: fixed.projectId ?? projectId,
             outputUrl: fixed.outputUrl,
             outputBlob: fixed.outputBlob,
             error: postFixQaPassed ? undefined : "Automatikus javítás után is maradtak kritikus QA hibák",
-            qa: fixed.qa,
+            qa: fixed.qa ?? qa,
             saved: false,
           });
           toast[postFixQaPassed ? "success" : "error"](
@@ -574,17 +586,17 @@ function ProductDetailView({
           );
           return;
         }
-        // Auto-fix call itself failed
+        // Every regenerate attempt failed at the network layer — keep the original output
         onProductUpdated(product.id, {
           status: "failed",
           projectId,
           outputUrl,
           outputBlob: blob,
-          error: "QA hibát talált és az automatikus javítás sikertelen",
+          error: "QA hibát talált és az automatikus újragenerálás sikertelen",
           qa,
           saved: false,
         });
-        toast.error(`${product.folderName} — QA hiba, javítás sikertelen`);
+        toast.error(`${product.folderName} — QA hiba, újragenerálás sikertelen`);
         return;
       }
 
@@ -674,21 +686,96 @@ function ProductDetailView({
     return (
       <div className="flex flex-col h-full">
         <DetailHeader product={product} onBack={onBack} />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center space-y-4">
-            <div className="w-14 h-14 rounded-2xl bg-red-50 border border-red-100 flex items-center justify-center mx-auto">
-              <XCircle className="w-7 h-7 text-red-400" />
+
+        {/* If we have an output blob/url from the last attempt, show it with a red overlay
+            so the user sees what was rejected. Otherwise fall back to the icon view. */}
+        {product.outputUrl ? (
+          <>
+            <div className="flex-1 min-h-0 flex items-center justify-center p-6 bg-gray-50/50">
+              <div className="relative rounded-2xl overflow-hidden border-2 border-red-400 shadow-lg bg-white max-w-full max-h-full flex items-center justify-center">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={product.outputUrl}
+                  alt={t("qa_failed_image_label")}
+                  className="object-contain max-h-[calc(100vh-380px)] max-w-full block mx-auto"
+                />
+                <div className="absolute inset-0 pointer-events-none ring-4 ring-red-500/20" />
+                <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-red-600 text-white rounded-full px-3 py-1 shadow-sm">
+                  <XCircle className="w-3.5 h-3.5" />
+                  <span className="text-xs font-semibold">{t("qa_failed_image_label")}</span>
+                </div>
+              </div>
             </div>
-            <div>
-              <p className="text-sm font-semibold text-gray-900">Generálás sikertelen</p>
-              <p className="text-xs text-gray-500 mt-1 max-w-[260px] leading-relaxed">{product.error}</p>
+
+            {/* QA failure banner — show issues, NOT the (often misleadingly positive) summary */}
+            <div className="shrink-0 border-t border-red-200 bg-red-50 px-5 py-2.5">
+              <div className="flex items-start gap-2">
+                <ShieldAlert className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-red-700">
+                    {t("qa_rejected_header")}: {product.error || t("qa_critical_after_autofix")}
+                  </p>
+                  {product.qa?.issues?.length ? (
+                    <>
+                      <p className="text-[11px] font-semibold text-red-600 mt-1">{t("qa_detected_issues")}:</p>
+                      <ul className="mt-0.5 space-y-0.5">
+                        {product.qa.issues.map((issue, i) => (
+                          <li key={i} className="text-[11px] text-red-600">• {issue}</li>
+                        ))}
+                      </ul>
+                    </>
+                  ) : null}
+                </div>
+              </div>
             </div>
-            <Button onClick={handleRegenerate} className="gap-2 bg-gray-900 text-white hover:bg-gray-700">
-              <RotateCcw className="w-4 h-4" />
-              Újragenerálás
-            </Button>
+
+            {/* Actions: only Generate again is enabled. Save / Download / Add-to-collection disabled. */}
+            <div className="shrink-0 border-t border-gray-100 bg-white px-5 py-3">
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  disabled
+                  title={t("qa_critical_after_autofix")}
+                  className="flex-1 border-gray-200 gap-2 h-9 text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Letöltés
+                </Button>
+                <Button
+                  onClick={handleRegenerate}
+                  className="flex-1 gap-2 h-9 text-xs font-semibold bg-gray-900 text-white hover:bg-gray-700"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  {t("qa_regenerate")}
+                </Button>
+                <Button
+                  disabled
+                  title={t("qa_critical_after_autofix")}
+                  className="flex-1 gap-2 h-9 text-xs font-semibold bg-green-600 text-white opacity-50 cursor-not-allowed"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  Mentés
+                </Button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center space-y-4">
+              <div className="w-14 h-14 rounded-2xl bg-red-50 border border-red-100 flex items-center justify-center mx-auto">
+                <XCircle className="w-7 h-7 text-red-400" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-gray-900">{t("qa_rejected_header")}</p>
+                <p className="text-xs text-gray-500 mt-1 max-w-[260px] leading-relaxed">{product.error}</p>
+              </div>
+              <Button onClick={handleRegenerate} className="gap-2 bg-gray-900 text-white hover:bg-gray-700">
+                <RotateCcw className="w-4 h-4" />
+                {t("qa_regenerate")}
+              </Button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     );
   }
@@ -1001,61 +1088,21 @@ export function BatchGhostStudioTool({ collectionId }: { collectionId?: string |
     const outputUrl = data.outputUrl as string;
     const blob = await fetch(outputUrl).then((r) => r.blob());
 
-    // Breathing room before QA — let Gemini rate limit window recover after generation
-    await new Promise((r) => setTimeout(r, 5_000));
-
-    // Run QA check on generated image (with retry + backoff)
-    const qa = await runQaWithRetry(blob);
-
     const projectId = data.projectId as string;
 
-    // QA API failure (undefined) — cannot verify quality, mark as failed so it's not silently accepted
-    if (!qa) {
+    await new Promise((r) => setTimeout(r, 1_000));
+    const qa = await runQaWithRetry(blob);
+
+    // QA failure or layout issue — mark failed but keep the image visible
+    if (qa && (!qa.pass || qa.severity === "critical")) {
       return {
         status: "failed",
         projectId,
         outputUrl,
         outputBlob: blob,
-        error: "QA ellenőrzés nem futott le — kézi ellenőrzés szükséges",
-        saved: false,
-      };
-    }
-
-    // Real QA detected issues — trigger auto-fix.
-    // Defensive: also trigger if any issue/summary mentions mannequin, even at warning severity.
-    const qaDetectedIssues = !qa.pass || qa.severity === "critical" || qaMentionsMannequin(qa);
-
-    if (qaDetectedIssues && projectId) {
-      onStatusUpdate?.({ status: "fixing" as const, qa });
-
-      const fixed = await attemptAutoFix(projectId, blob, qa);
-      if (fixed) {
-        // Post-fix QA must have actually passed to mark completed
-        // If QA didn't run (undefined), still found critical issues, or still mentions mannequin → failed
-        const postFixQaPassed = !!fixed.qa?.pass
-          && fixed.qa.severity !== "critical"
-          && !qaMentionsMannequin(fixed.qa);
-        return {
-          status: postFixQaPassed ? "completed" : "failed",
-          projectId,
-          outputUrl: fixed.outputUrl,
-          outputBlob: fixed.outputBlob,
-          error: postFixQaPassed ? undefined : "Automatikus javítás után is maradtak kritikus QA hibák",
-          qa: fixed.qa,
-          saved: false,
-          _autoFixed: true,
-        };
-      }
-      // Auto-fix call itself failed — mark as failed
-      return {
-        status: "failed",
-        projectId,
-        outputUrl,
-        outputBlob: blob,
-        error: "QA hibát talált és az automatikus javítás sikertelen",
+        error: qa.summary || "QA elutasította a layoutot",
         qa,
         saved: false,
-        _autoFixed: true,
       };
     }
 
@@ -1064,6 +1111,7 @@ export function BatchGhostStudioTool({ collectionId }: { collectionId?: string |
       projectId,
       outputUrl,
       outputBlob: blob,
+      error: undefined,
       qa,
       saved: false,
     };
@@ -1078,6 +1126,7 @@ export function BatchGhostStudioTool({ collectionId }: { collectionId?: string |
     setProducts((prev) => prev.map((p) => ({
       ...p, status: "pending" as const, error: undefined,
       outputUrl: undefined, outputBlob: undefined, projectId: undefined,
+      qa: undefined, saved: false,
     })));
 
     for (let i = 0; i < products.length; i++) {
@@ -1100,7 +1149,7 @@ export function BatchGhostStudioTool({ collectionId }: { collectionId?: string |
 
       // Adaptive cooldown between items
       if (i < products.length - 1 && !abortRef.current) {
-        const cooldown = didAutoFix ? 15_000 : 8_000;
+        const cooldown = didAutoFix ? 4_000 : 2_000;
         await new Promise((r) => setTimeout(r, cooldown));
       }
     }
@@ -1116,11 +1165,7 @@ export function BatchGhostStudioTool({ collectionId }: { collectionId?: string |
 
   const handleDownloadZip = useCallback(async () => {
     const completed = products.filter((p) =>
-      p.status === "completed"
-      && p.outputBlob
-      && p.qa?.pass
-      && p.qa.severity !== "critical"
-      && !qaMentionsMannequin(p.qa)
+      p.status === "completed" && p.outputBlob && (!p.qa || p.qa.pass)
     );
     if (completed.length === 0) {
       toast.error("Nincs letölthető eredmény.");

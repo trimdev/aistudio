@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { UploadPanel } from "./UploadPanel";
 import { PreviewPanel } from "./PreviewPanel";
 import { SettingsPanel } from "./SettingsPanel";
+import { useLanguage } from "@/components/providers/LanguageProvider";
 
 import { compressImage, revokePreviews } from "@/lib/image-utils";
 
@@ -76,8 +77,16 @@ function buildPreviews(images: UploadedImages): UploadedPreviews {
   };
 }
 
+type QaState =
+  | { kind: "idle" }
+  | { kind: "running" }
+  | { kind: "passed" }
+  | { kind: "failed"; summary: string; issues: string[] }
+  | { kind: "no_run" };
+
 export function GhostStudioTool({ collectionId }: { collectionId?: string | null }) {
   const router = useRouter();
+  const { t } = useLanguage();
   const [images, setImages] = useState<UploadedImages>({ front: null, back: null, side: null });
   const [previews, setPreviews] = useState<UploadedPreviews>({ front: null, back: null, side: null });
   const [projectName, setProjectName] = useState("");
@@ -85,6 +94,9 @@ export function GhostStudioTool({ collectionId }: { collectionId?: string | null
   const [step, setStep] = useState<GenerationStep>("idle");
   const [result, setResult] = useState<GenerationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [qaState, setQaState] = useState<QaState>({ kind: "idle" });
+  // Holds the just-generated result while QA runs — only promoted to `result` once QA passes.
+  const [pendingResult, setPendingResult] = useState<GenerationResult | null>(null);
 
   // Version history state
   const [versions, setVersions] = useState<ProjectVersionWithUrl[]>([]);
@@ -151,6 +163,8 @@ export function GhostStudioTool({ collectionId }: { collectionId?: string | null
     setResult(null);
     setError(null);
     setVersions([]);
+    setQaState({ kind: "idle" });
+    setPendingResult(null);
     startStepAnimation();
 
     const name = projectName.trim() || `Ghost Shot ${new Date().toLocaleDateString("hu-HU", { month: "long", day: "numeric" })}`;
@@ -186,7 +200,6 @@ export function GhostStudioTool({ collectionId }: { collectionId?: string | null
       if (!res.ok) throw new Error((data.error as string) || `Server error ${res.status}`);
 
       stopStepAnimation();
-      setStep("done");
       const newResult: GenerationResult = {
         outputUrl: data.outputUrl as string,
         outputPath: data.outputPath as string,
@@ -196,48 +209,46 @@ export function GhostStudioTool({ collectionId }: { collectionId?: string | null
         generatedAt: new Date(),
         versionNumber: data.versionNumber as number,
       };
-      setResult(newResult);
 
-      // Load versions
-      await fetchVersions(data.projectId as string);
+      setPendingResult(newResult);
+      setQaState({ kind: "running" });
+      fetchVersions(newResult.projectId).catch(() => {});
 
-      toast.success("Szellemfigura kép elkészült! QA ellenőrzés folyamatban...");
-
-      // Run QA in the background — don't block UI from showing the image.
-      // 5s breathing room lets the Gemini rate-limit window recover after generation.
-      (async () => {
-        try {
-          await new Promise((r) => setTimeout(r, 5_000));
-          const imgRes = await fetch(newResult.outputUrl);
-          if (!imgRes.ok) {
-            console.warn("[qa] could not fetch output image for QA:", imgRes.status);
-            toast.warning("QA ellenőrzés nem futott le — ellenőrizd manuálisan.");
-            return;
-          }
-          const blob = await imgRes.blob();
-          const qa = await runQaCheck(blob);
-          if (!qa) {
-            toast.warning("QA ellenőrzés nem futott le — ellenőrizd manuálisan.");
-            return;
-          }
-          const mentionsMannequin = qaMentionsMannequin(qa);
-          if (!qa.pass || qa.severity === "critical" || mentionsMannequin) {
-            toast.error(`QA hibát talált: ${qa.summary}`, {
-              description: qa.issues.slice(0, 3).join(" • ") || "Generáld újra a képet.",
-              duration: 12_000,
-            });
-          } else if (qa.severity === "warning") {
-            toast.warning(`QA figyelmeztetés: ${qa.summary}`, {
-              description: qa.issues.slice(0, 3).join(" • "),
-              duration: 8_000,
-            });
-          } else {
-            toast.success("QA ellenőrzés sikeres ✓");
-          }
-        } catch (qaErr) {
-          console.error("[qa] background QA failed:", qaErr);
+      try {
+        await new Promise((r) => setTimeout(r, 2_000));
+        const imgRes = await fetch(newResult.outputUrl);
+        if (!imgRes.ok) {
+          setResult(newResult);
+          setStep("done");
+          setQaState({ kind: "idle" });
+          return;
         }
-      })();
+        const blob = await imgRes.blob();
+        const qa = await runQaCheck(blob);
+        if (!qa) {
+          setResult(newResult);
+          setStep("done");
+          setQaState({ kind: "idle" });
+          return;
+        }
+        const isFailure = !qa.pass || qa.severity === "critical";
+        if (isFailure) {
+          setQaState({
+            kind: "failed",
+            summary: qa.summary || "QA hibát talált.",
+            issues: qa.issues || [],
+          });
+          setStep("idle");
+          return;
+        }
+        setResult(newResult);
+        setStep("done");
+        setQaState({ kind: "passed" });
+      } catch {
+        setResult(newResult);
+        setStep("done");
+        setQaState({ kind: "idle" });
+      }
     } catch (err: unknown) {
       const errName = err instanceof Error ? err.constructor.name : "Unknown";
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -256,8 +267,18 @@ export function GhostStudioTool({ collectionId }: { collectionId?: string | null
     setError(null);
     setStep("idle");
     setVersions([]);
+    setQaState({ kind: "idle" });
+    setPendingResult(null);
     setTimeout(handleGenerate, 50);
   }, [handleGenerate]);
+
+  // User overrides QA verdict and accepts the image manually.
+  const handleAcceptAnyway = useCallback(() => {
+    if (!pendingResult) return;
+    setResult(pendingResult);
+    setStep("done");
+    setQaState({ kind: "passed" });
+  }, [pendingResult]);
 
   const handleRefined = useCallback(async (refinedResult: GenerationResult) => {
     setResult(refinedResult);
@@ -267,7 +288,10 @@ export function GhostStudioTool({ collectionId }: { collectionId?: string | null
   }, [result, fetchVersions]);
 
 
-  const isLoading = step !== "idle" && step !== "done" && step !== "error";
+  const isGenerating = step !== "idle" && step !== "done" && step !== "error";
+  const isQaRunning = qaState.kind === "running";
+  const isLoading = isGenerating || isQaRunning;
+  const qaBlocked = qaState.kind === "failed" || qaState.kind === "no_run";
 
   return (
     <>
@@ -288,6 +312,10 @@ export function GhostStudioTool({ collectionId }: { collectionId?: string | null
           activeVersionIndex={activeVersionIndex}
           onSelectVersion={setActiveVersionIndex}
           onRefined={handleRefined}
+          qaState={qaState}
+          pendingPreviewUrl={pendingResult?.outputUrl ?? null}
+          onAcceptAnyway={handleAcceptAnyway}
+          onRegenerate={handleRegenerate}
         />
         <SettingsPanel
           images={images}
@@ -300,6 +328,8 @@ export function GhostStudioTool({ collectionId }: { collectionId?: string | null
           onRefinePromptChange={setRefinePrompt}
           onGenerate={handleGenerate}
           onRegenerate={handleRegenerate}
+          qaBlocked={qaBlocked}
+          qaRunning={isQaRunning}
         />
       </div>
 

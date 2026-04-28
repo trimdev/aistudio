@@ -16,22 +16,28 @@ import {
  * Creates professional e-commerce ghost mannequin (invisible mannequin / hollow man)
  * product photos from uploaded garment reference images.
  */
-export const GHOST_MANNEQUIN_SYSTEM_INSTRUCTION = `You are an expert fashion e-commerce product photographer specializing in the ghost mannequin (invisible mannequin / hollow man) technique.
-
-Your task: create a professional fashion e-commerce ghost mannequin product photo from the uploaded garment images.
+export const GHOST_MANNEQUIN_SYSTEM_INSTRUCTION = `Create a professional fashion e-commerce ghost mannequin product photo
+(invisible mannequin / hollow man effect) based on the uploaded garment images.
 
 LAYOUT:
-Show two views side by side: [FRONT VIEW] | [BACK VIEW]
-Both views must be the same scale, aligned vertically, and centered on the canvas.
+- Show the front view on the left and the back view on the right, side by side horizontally
+- The two garments must be clearly SEPARATED with a visible gap between them
+- They MUST NOT touch, overlap, or share edges
+- Both views centered vertically, evenly spaced from the canvas edges
+- Consistent scale and proportions across both views
 
-MANNEQUIN EFFECT (CRITICAL):
+NO TEXT, NO LABELS, NO ANNOTATIONS — CRITICAL:
+- Do NOT render any text, words, letters, captions, or labels on the image
+- Do NOT add titles, headings, or "Front" / "Back" / "Front View" / "Back View" labels
+- Do NOT add watermarks, brand names, logos that are not on the original garment, image numbers, or any written marks
+- The output image must contain ZERO text overlays — only the two garment photos on a clean background
+
+MANNEQUIN EFFECT:
 - The garment must appear self-supporting, as if worn by an invisible body
 - Natural 3D volume, realistic fabric drape and structure
 - No visible mannequin, hanger, pins, hands, or any support elements
-- The neckline, sleeves and hem should be open and natural, revealing the hollow interior of the garment
-- NECKLINE / COLLAR: Inside of collar must be hollow — only fabric edges visible, no neck form
-- BOTTOM / HEM: Garment hem ends cleanly, nothing below it — no base, stand, or leg forms
-- ARMHOLES / SLEEVES: Sleeve openings must appear hollow — no arm forms visible
+- The neckline, sleeves and hem should be open and natural, revealing
+ the hollow interior of the garment
 
 COLOR ACCURACY (CRITICAL):
 - Reproduce all colors with absolute fidelity to the original garment
@@ -39,9 +45,10 @@ COLOR ACCURACY (CRITICAL):
 - Match fabric texture and sheen exactly as in the reference images
 
 DETAIL PRESERVATION (CRITICAL):
-- Preserve ALL original details exactly: stitching, seams, buttons, zippers, pockets, embroidery, prints, patterns, logos, labels, badges, drawstrings, ribbing, collar construction and any other design elements
+- Preserve ALL original details exactly: stitching, seams, buttons,
+ zippers, pockets, embroidery, prints, patterns, logos, labels, badges,
+ drawstrings, ribbing, collar construction and any other design elements
 - No details may be omitted, simplified or altered
-- Text/logos must read correctly in both views (never mirrored)
 
 TECHNICAL SPECS:
 - Pure white background (#FFFFFF) or neutral light grey
@@ -49,12 +56,6 @@ TECHNICAL SPECS:
 - High-resolution, sharp focus across the entire garment
 - Consistent scale between front and back views
 - Style: clean, minimal, professional fashion e-commerce product photo`;
-
-/**
- * @deprecated Use GHOST_MANNEQUIN_SYSTEM_INSTRUCTION instead.
- * Kept as alias for any external references.
- */
-export const GHOST_MANNEQUIN_SYSTEM_PROMPT = GHOST_MANNEQUIN_SYSTEM_INSTRUCTION;
 
 export interface GhostMannequinImageResult {
   imageBuffer: Buffer;
@@ -88,17 +89,14 @@ export async function generateGhostMannequin(
   const apiKey = resolveApiKey(clientApiKey);
   const genAI = new GoogleGenerativeAI(apiKey);
 
-  // Build system instruction: base rules + optional workspace memory
-  let sysInstruction = GHOST_MANNEQUIN_SYSTEM_INSTRUCTION;
-  if (memoryBlock?.trim()) {
-    sysInstruction += `\n\nWorkspace notes (additional criteria):\n${memoryBlock.trim()}`;
-  }
+  void memoryBlock;
+
+  const MODEL_ID = "gemini-3-pro-image-preview";
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash-image",
-    systemInstruction: sysInstruction,
+    model: MODEL_ID,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    generationConfig: { responseModalities: ["TEXT", "IMAGE"] } as any,
+    generationConfig: { responseModalities: ["IMAGE"] } as any,
     safetySettings: [
       {
         category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
@@ -111,7 +109,6 @@ export async function generateGhostMannequin(
     ],
   });
 
-  // Images as contiguous block — no interleaved text labels.
   const imageParts: Part[] = imageBuffers.map((buf, i) => ({
     inlineData: {
       data: buf.toString("base64"),
@@ -119,20 +116,24 @@ export async function generateGhostMannequin(
     },
   }));
 
-  // Concise user-level command — the detailed rules are in systemInstruction
-  const imageRoles = imageBuffers.length === 3
-    ? "Image 1 = FRONT view, Image 2 = BACK view, Image 3 = SIDE/DETAIL reference."
-    : "Image 1 = FRONT view, Image 2 = BACK view.";
-
-  let userPrompt = `${imageRoles}
-
-Create a professional ghost mannequin product photo from these garment images. The garment must appear self-supporting with natural 3D volume — no mannequin, hanger, or support visible. Hollow openings at neckline, sleeves, and hem. Pure white (#FFFFFF) background, soft even studio lighting. Output side-by-side: FRONT view on LEFT, BACK view on RIGHT. Preserve all colors, textures, and details with absolute fidelity.`;
-
+  let userPrompt = GHOST_MANNEQUIN_SYSTEM_INSTRUCTION;
   if (refinePrompt?.trim()) {
     userPrompt += `\n\nAdditional user instructions: ${refinePrompt.trim()}`;
   }
 
-  // Images FIRST, then concise edit command
+  const promptHash = require("crypto").createHash("sha256").update(userPrompt).digest("hex").slice(0, 12);
+  console.log("════════════════════════════════════════════════════════════");
+  console.log(`[ghost] model: ${MODEL_ID}`);
+  console.log(`[ghost] prompt length: ${userPrompt.length} chars`);
+  console.log(`[ghost] prompt sha256[0:12]: ${promptHash}`);
+  console.log(`[ghost] image count: ${imageBuffers.length}`);
+  console.log(`[ghost] image mimes: ${mimeTypes.join(", ")}`);
+  console.log(`[ghost] image sizes (bytes): ${imageBuffers.map((b) => b.length).join(", ")}`);
+  console.log("[ghost] ──── PROMPT BEGIN ────");
+  console.log(userPrompt);
+  console.log("[ghost] ──── PROMPT END ────");
+  console.log("════════════════════════════════════════════════════════════");
+
   const request = {
     contents: [
       {
@@ -143,7 +144,7 @@ Create a professional ghost mannequin product photo from these garment images. T
   };
 
   const MAX_ATTEMPTS = 2;
-  const RETRY_DELAY_MS = 10_000;
+  const RETRY_DELAY_MS = 3_000;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const result = await model.generateContent(request);
@@ -202,25 +203,72 @@ export async function refineGhostMannequin(
   const genAI = new GoogleGenerativeAI(apiKey);
 
   // System instruction for refinement context
-  let sysInstruction = `You are an expert fashion e-commerce product photographer specializing in ghost mannequin (invisible mannequin / hollow man) photography.
-Your task: fix issues in a ghost mannequin composite image while preserving the professional e-commerce product photo quality.
+  let sysInstruction = `TASK TYPE: image transformation (refinement pass). INPUT = a ghost mannequin composite that STILL contains mannequin artifacts or other defects. OUTPUT = the EXACT SAME composite, but with every remaining mannequin pixel erased and replaced by EMPTY interior space inside the garment, while the garment itself stays pixel-faithful to the input.
 
-RULE #1 — ABSOLUTE, NON-NEGOTIABLE: THE MANNEQUIN MUST BE COMPLETELY INVISIBLE
-- The garment must appear self-supporting with natural 3D volume — no mannequin, hanger, clips, pins, hands, or any support hardware visible
-- NECKLINE / COLLAR: the inside of the collar must be hollow — only fabric edges visible, no neck form, no plastic, no skin-toned surfaces
-- ARMHOLES / SLEEVES: sleeve openings must appear hollow — no arm forms, no plastic sheen, no skin-tone bleeding through
-- HEM / BOTTOM: garment ends cleanly with nothing below it — no base, stand, leg form, or plastic surface
-- No skin-toned, tan, beige or plastic-looking areas anywhere where the mannequin was not fully removed
-- No specular highlights or matte plastic finish that would indicate synthetic mannequin material
+You are NOT regenerating from scratch. You are TRANSFORMING the existing composite by performing one specific edit: REMOVING leftover mannequin artifacts and REPLACING them with empty fabric-interior volume. Everything else — the garment, its colours, its drape, its layout, its scale, its details — must remain pixel-faithful to the current composite.
 
-OTHER RULES:
-- Reproduce all colors with absolute fidelity — do NOT alter, enhance, saturate, or shift any colors
-- Preserve ALL original details: stitching, seams, buttons, zippers, pockets, prints, patterns, logos, labels, badges
-- Preserve the side-by-side layout (FRONT on LEFT, BACK on RIGHT), consistent scale between views
-- Pure white (#FFFFFF) background only — no grey, no off-white, no gradient
-- Soft, even studio lighting — absolutely no harsh shadows, drop shadows, or strong contact shadows
-- Text/logos must read correctly in both views (never mirrored, never reversed)
-- Maintain natural fabric drape and 3D volume — do not flatten the garment to hide mannequin removal`;
+══════════════════════════════════════════════════
+THE TRANSFORMATION, IN ONE SENTENCE
+══════════════════════════════════════════════════
+Imagine a real garment photographed on a mannequin in a studio. Now imagine pressing a button that makes the mannequin transparent / invisible. The garment keeps its 3D shape, the collar opening still shows the dark interior of the garment, the sleeves still look round and worn — but you cannot see anything where the mannequin used to be. THAT is the only correct refinement.
+
+══════════════════════════════════════════════════
+ANCHOR WORD: EMPTY
+══════════════════════════════════════════════════
+  • EMPTY collar interior — no neck, no plastic, no skin-tone, no padding. Just empty space showing the dark fabric lining receding into shadow.
+  • EMPTY sleeve interiors — no arm, no stub, no plastic. Just empty fabric tubes receding into shadow at every cuff and shoulder opening.
+  • EMPTY space below the hem — no legs, no stand, no base, no pedestal. Just pure white background.
+  • EMPTY interior visible through the neckline — looking down into the collar reveals only the dark inside of the back of the garment, never a body, never a surface that looks like skin or plastic.
+
+══════════════════════════════════════════════════
+WHAT FILLS EACH GAP LEFT BY THE REMOVED MANNEQUIN
+══════════════════════════════════════════════════
+Inside the collar: the dark fabric interior of the garment, visible as a shadow/silhouette of the lining (NOT the white background, NOT a body, NOT plastic). Real depth into darkness.
+Inside the sleeves: the dark fabric interior of each sleeve tube, visible as a shadow into darkness at every opening.
+Below the hem: pure white #FFFFFF background. NO shadow of any body shape. NO body-coloured area. NO base.
+Where the body was: complete absence — the garment must hold its shape via realistic 3D fabric drape over INVISIBLE volume.
+
+══════════════════════════════════════════════════
+WHAT IS A MANNEQUIN — RECOGNIZE AND ERASE ALL OF THESE
+══════════════════════════════════════════════════
+  • Skin-tone surfaces (beige, tan, peach, cream, ivory, flesh-coloured)
+  • Plastic sheen, glossy synthetic finish, matte plastic look
+  • Smooth featureless surfaces with no skin pores or hair
+  • A headless torso, partial torso, or bust form
+  • Stub arms, partial limbs, plastic shoulders, plastic neck
+  • Dressform fabric covering (canvas, linen-wrapped torso, padded form)
+  • Visible seam lines on a body-shaped form, screw points, joint marks
+  • A stand, pole, base, or pedestal under the garment
+
+══════════════════════════════════════════════════
+LAYOUT, BACKGROUND, FIDELITY — TIGHT RULES
+══════════════════════════════════════════════════
+  1. Preserve the side-by-side layout: FRONT view on the LEFT, BACK view on the RIGHT, equal scale, vertically aligned, centered.
+  2. Background: pure white #FFFFFF only — no grey, no off-white, no gradient, no texture, no body-shadow, no drop shadow, no halo.
+  3. Lighting: soft, even studio lighting.
+  4. Detail preservation — verbatim, no reinterpretation: stitching, seams, buttons, zippers, pockets, embroidery, prints, patterns, logos, labels, badges, drawstrings, ribbing, collar construction, hardware, trim.
+  5. Color fidelity: pixel-accurate to the input garment. Match fabric texture and sheen exactly.
+  6. Text and logos must read correctly in both views — never mirrored, never reversed.
+  7. The garment must hold full 3D volume — do NOT flatten it to disguise mannequin removal.
+
+══════════════════════════════════════════════════
+PROHIBITED OUTPUTS
+══════════════════════════════════════════════════
+  ✗ Do NOT show any neck form, plastic neck, padded neck, or skin-tone surface inside the collar
+  ✗ Do NOT show any arm form, plastic limb, stub arm, or skin-tone surface inside sleeve openings
+  ✗ Do NOT show any base, stand, pedestal, leg form, or torso below the hem of the garment
+  ✗ Do NOT leave any beige, tan, peach, cream, ivory, plastic-sheen, or skin-tone surface anywhere in the image
+  ✗ Do NOT cast a body-shaped shadow, silhouette, or outline of a torso on the background
+  ✗ Do NOT replace the mannequin with a real person, a model, a face, hands, hair, or any visible body part
+  ✗ Do NOT add a hanger, clip, pin, clamp, magnet, or any visible support hardware
+  ✗ Do NOT alter the garment type, length, silhouette, colours, or any construction detail
+  ✗ Do NOT fill the collar, sleeves, or hem with the white background colour — they must show the dark fabric interior receding into shadow
+
+══════════════════════════════════════════════════
+FINAL SELF-CHECK — ASK YOURSELF BEFORE FINISHING
+══════════════════════════════════════════════════
+  1. Can I see ANY skin-tone, beige, tan, peach, plastic, or cream surface anywhere? If yes, regenerate without it.
+  2. Can I see the dark interior of the garment through the collar opening, the sleeve openings, and (where applicable) the hem? If no, regenerate showing it.`;
   if (memoryBlock?.trim()) {
     sysInstruction += `\n\nWorkspace notes:\n${memoryBlock.trim()}`;
   }
@@ -287,7 +335,7 @@ Keep the side-by-side layout, all colors, and every fabric detail exactly intact
   };
 
   const MAX_ATTEMPTS = 2;
-  const RETRY_DELAY_MS = 10_000;
+  const RETRY_DELAY_MS = 3_000;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const result = await model.generateContent(request);
@@ -460,7 +508,7 @@ export async function generateModelPhoto(
   const request = { contents: [{ role: "user", parts: [...garmentParts, { text: fullPrompt }] }] };
 
   const MAX_ATTEMPTS = 2;
-  const RETRY_DELAY_MS = 10_000;
+  const RETRY_DELAY_MS = 3_000;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const result = await model.generateContent(request);
@@ -586,7 +634,7 @@ export async function generateDesignModelPhoto(
   const request = portraitBuffer ? requestWithPortrait : requestWithoutPortrait;
 
   const MAX_ATTEMPTS   = 2;
-  const RETRY_DELAY_MS = 10_000;
+  const RETRY_DELAY_MS = 3_000;
 
   // Phase 1: try with portrait reference (if provided)
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {

@@ -123,6 +123,23 @@ export const translations = {
     prev_dl_webp: "Download WebP",
     prev_step_wait: "This may take 20–60 seconds. Sit tight while the AI works its magic.",
 
+    // QA states
+    qa_running: "Running QA check...",
+    qa_running_subtitle: "Verifying the result against e-commerce quality standards",
+    qa_pending_badge: "QA running",
+    qa_step_label: "Quality assurance",
+    qa_failed_title: "QA rejected the image",
+    qa_failed_desc: "The QA inspector found issues. Generate again before using this image.",
+    qa_no_run_title: "QA did not run — regenerate",
+    qa_no_run_desc: "The QA check could not complete. Do not use this image — generate again.",
+    qa_passed_toast: "QA passed",
+    qa_accept_anyway: "Use anyway",
+    qa_regenerate: "Generate again",
+    qa_rejected_header: "QA rejected",
+    qa_critical_after_autofix: "Critical issues remain after auto-fix",
+    qa_detected_issues: "Detected issues",
+    qa_failed_image_label: "Rejected output (do not use)",
+
     // Steps
     step_uploading: "Uploading images",
     step_analyzing: "Analyzing garment",
@@ -371,6 +388,23 @@ export const translations = {
     prev_dl_png: "PNG letöltése",
     prev_dl_webp: "WebP letöltése",
     prev_step_wait: "Ez 20–60 másodpercet vehet igénybe. Várd meg, amíg az AI elvégzi a munkát.",
+
+    // QA states
+    qa_running: "QA ellenőrzés folyamatban...",
+    qa_running_subtitle: "A kép ellenőrzése e-commerce minőségi szabványok szerint",
+    qa_pending_badge: "QA fut",
+    qa_step_label: "Minőségellenőrzés",
+    qa_failed_title: "QA elutasította a képet",
+    qa_failed_desc: "A QA ellenőr hibákat talált. Generáld újra a képet, mielőtt felhasználnád.",
+    qa_no_run_title: "QA nem futott le — generáld újra",
+    qa_no_run_desc: "A QA ellenőrzés nem fejeződött be. Ne használd ezt a képet — generáld újra.",
+    qa_passed_toast: "QA sikeres",
+    qa_accept_anyway: "Mégis használom",
+    qa_regenerate: "Új generálás",
+    qa_rejected_header: "QA elutasította",
+    qa_critical_after_autofix: "Automatikus javítás után is maradtak kritikus QA hibák",
+    qa_detected_issues: "Észlelt problémák",
+    qa_failed_image_label: "Elutasított kép (ne használd)",
 
     // Steps
     step_uploading: "Képek feltöltése",

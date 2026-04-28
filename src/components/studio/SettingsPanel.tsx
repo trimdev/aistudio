@@ -24,11 +24,14 @@ interface SettingsPanelProps {
   onRefinePromptChange: (v: string) => void;
   onGenerate: () => void;
   onRegenerate: () => void;
+  qaBlocked?: boolean;
+  qaRunning?: boolean;
 }
 
 export function SettingsPanel({
   images, step, result, projectName, refinePrompt, collectionId,
   onProjectNameChange, onRefinePromptChange, onGenerate, onRegenerate,
+  qaBlocked = false, qaRunning = false,
 }: SettingsPanelProps) {
   const { t } = useLanguage();
   const router = useRouter();
@@ -79,8 +82,11 @@ export function SettingsPanel({
     router.push(`/studio/new/design-model${params}`);
   };
 
-  const isLoading = step !== "idle" && step !== "done" && step !== "error";
-  const isDone = step === "done" && result !== null;
+  const isGenerating = step !== "idle" && step !== "done" && step !== "error";
+  const isLoading = isGenerating || qaRunning;
+  // Save / "use this" actions are blocked while QA is running OR while QA has rejected
+  // the image. The user must regenerate (or explicitly accept) before downloads/save.
+  const isDone = step === "done" && result !== null && !qaBlocked && !qaRunning;
   const canGenerate = !!images.front && !!images.back && !isLoading;
 
   return (
@@ -245,7 +251,9 @@ export function SettingsPanel({
               : isLoading ? "bg-gray-900 text-white opacity-80"
               : "bg-gray-200 text-gray-400 cursor-not-allowed"
           )}>
-          {isLoading ? (
+          {qaRunning ? (
+            <><Loader2 className="w-4 h-4 animate-spin" />{t("qa_running")}</>
+          ) : isLoading ? (
             <><Loader2 className="w-4 h-4 animate-spin" />{t("set_generating")}</>
           ) : (
             <><Wand2 className="w-4 h-4" />{t("set_generate")}</>
