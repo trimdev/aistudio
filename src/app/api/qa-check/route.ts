@@ -22,8 +22,8 @@ Only flag these two things. Nothing else matters.
 
 DO NOT flag:
 - Mannequin visibility, skin tones, hollow interiors, collar/sleeve interiors
-- Background, lighting, shadows
-- Color accuracy unless it's an obvious wrong color
+- Background color, gray backgrounds, lighting, shadows
+- Color accuracy of the garment unless it's an obviously wrong garment color
 - Stitching, prints, logos, small details
 - 3D volume, drape, proportions
 

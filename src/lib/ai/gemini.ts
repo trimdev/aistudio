@@ -50,8 +50,14 @@ DETAIL PRESERVATION (CRITICAL):
  drawstrings, ribbing, collar construction and any other design elements
 - No details may be omitted, simplified or altered
 
+BACKGROUND — CRITICAL, MUST BE PURE WHITE:
+- The background MUST be pure white (#FFFFFF) — solid, even, uniform white across the entire canvas
+- Do NOT use gray, light gray, off-white, beige, ivory, gradient, or any tinted background
+- Do NOT use any background texture, pattern, vignette, or studio backdrop
+- The canvas behind and around both garments must read as pure white at every pixel
+- Only an extremely subtle contact shadow directly under the garment hem is allowed — nothing else
+
 TECHNICAL SPECS:
-- Pure white background (#FFFFFF) or neutral light grey
 - Soft, even studio lighting — no harsh shadows
 - High-resolution, sharp focus across the entire garment
 - Consistent scale between front and back views
