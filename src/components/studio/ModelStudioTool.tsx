@@ -20,7 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { downloadFile, revokePreviews } from "@/lib/image-utils";
+import { compressImage, downloadFile, revokePreviews } from "@/lib/image-utils";
 import { useLanguage } from "@/components/providers/LanguageProvider";
 import { ModelUploadPanel } from "./ModelUploadPanel";
 import type {
@@ -69,9 +69,14 @@ async function callGenerateSingle(
   if (ghostProjectId) {
     fd.append("ghostProjectId", ghostProjectId);
   } else {
-    fd.append("front", images.front!);
-    fd.append("back",  images.back!);
-    if (images.side) fd.append("side", images.side);
+    const [frontC, backC, sideC] = await Promise.all([
+      compressImage(images.front!),
+      compressImage(images.back!),
+      images.side ? compressImage(images.side) : Promise.resolve(null),
+    ]);
+    fd.append("front", frontC);
+    fd.append("back",  backC);
+    if (sideC) fd.append("side", sideC);
   }
   fd.append("projectName", name);
   fd.append("variant",     variant);
