@@ -76,6 +76,18 @@ function resolveApiKey(clientKey?: string | null): string {
   return key;
 }
 
+// Vercel kills generate routes at maxDuration=300s. gemini-3-pro-image-preview
+// often takes 60–180s per call, so a blind retry can push past that cap and
+// produce a 504. Only retry if the remaining function budget can plausibly
+// fit another call plus the inter-attempt delay.
+const FUNCTION_DEADLINE_MS = 300_000;
+const RETRY_RESERVE_MS = 180_000;
+
+function hasBudgetForRetry(startedAt: number, retryDelayMs: number): boolean {
+  const remaining = FUNCTION_DEADLINE_MS - (Date.now() - startedAt);
+  return remaining > retryDelayMs + RETRY_RESERVE_MS;
+}
+
 /**
  * Generate a ghost mannequin composite image from 2-3 garment photos.
  * Uses Gemini's native image generation (image-to-image editing).
@@ -151,6 +163,7 @@ export async function generateGhostMannequin(
 
   const MAX_ATTEMPTS = 2;
   const RETRY_DELAY_MS = 3_000;
+  const startedAt = Date.now();
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const result = await model.generateContent(request);
@@ -170,7 +183,7 @@ export async function generateGhostMannequin(
     const textPart = parts.find((p) => "text" in p);
     const detail = textPart && "text" in textPart ? (textPart as { text: string }).text : "No image returned";
 
-    if (attempt < MAX_ATTEMPTS) {
+    if (attempt < MAX_ATTEMPTS && hasBudgetForRetry(startedAt, RETRY_DELAY_MS)) {
       await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
     } else {
       throw new Error(`AI did not return an image. Details: ${detail}`);
@@ -342,6 +355,7 @@ Keep the side-by-side layout, all colors, and every fabric detail exactly intact
 
   const MAX_ATTEMPTS = 2;
   const RETRY_DELAY_MS = 3_000;
+  const startedAt = Date.now();
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const result = await model.generateContent(request);
@@ -361,7 +375,7 @@ Keep the side-by-side layout, all colors, and every fabric detail exactly intact
     const textPart = parts.find((p) => "text" in p);
     const detail = textPart && "text" in textPart ? (textPart as { text: string }).text : "No image returned";
 
-    if (attempt < MAX_ATTEMPTS) {
+    if (attempt < MAX_ATTEMPTS && hasBudgetForRetry(startedAt, RETRY_DELAY_MS)) {
       await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
     } else {
       throw new Error(`AI did not return an image. Details: ${detail}`);
@@ -515,6 +529,7 @@ export async function generateModelPhoto(
 
   const MAX_ATTEMPTS = 2;
   const RETRY_DELAY_MS = 3_000;
+  const startedAt = Date.now();
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const result = await model.generateContent(request);
@@ -535,7 +550,7 @@ export async function generateModelPhoto(
     const textPart = parts.find((p) => "text" in p);
     const detail   = textPart && "text" in textPart ? (textPart as { text: string }).text : `finish_reason=${finishReason}`;
 
-    if (attempt < MAX_ATTEMPTS) {
+    if (attempt < MAX_ATTEMPTS && hasBudgetForRetry(startedAt, RETRY_DELAY_MS)) {
       await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
     } else {
       throw new Error(`AI did not return an image. Details: ${detail}`);
@@ -641,6 +656,7 @@ export async function generateDesignModelPhoto(
 
   const MAX_ATTEMPTS   = 2;
   const RETRY_DELAY_MS = 3_000;
+  const startedAt      = Date.now();
 
   // Phase 1: try with portrait reference (if provided)
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -660,7 +676,11 @@ export async function generateDesignModelPhoto(
 
     const finishReason = String(result.response.candidates?.[0]?.finishReason ?? "UNKNOWN");
     if (finishReason === "IMAGE_OTHER" || finishReason === "IMAGE_SAFETY") break;
-    if (attempt < MAX_ATTEMPTS) await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+    if (attempt < MAX_ATTEMPTS && hasBudgetForRetry(startedAt, RETRY_DELAY_MS)) {
+      await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+    } else {
+      break;
+    }
   }
 
   // Phase 2: fall back without portrait if it caused a refusal
@@ -685,7 +705,7 @@ export async function generateDesignModelPhoto(
         ? (textPart as { text: string }).text
         : `finish_reason=${result.response.candidates?.[0]?.finishReason ?? "UNKNOWN"}`;
 
-      if (attempt < MAX_ATTEMPTS) {
+      if (attempt < MAX_ATTEMPTS && hasBudgetForRetry(startedAt, RETRY_DELAY_MS)) {
         await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
       } else {
         throw new Error(`AI did not return an image. Details: ${detail}`);
